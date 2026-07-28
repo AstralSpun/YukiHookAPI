@@ -37,7 +37,7 @@ import com.highcapable.yukihookapi.hook.xposed.prefs.YukiHookPrefsBridge
 /**
  * Extends preference support for Xposed modules built with [YukiHookAPI].
  *
- * Extends [PreferenceFragmentCompat] and makes the module's SharedPreferences globally readable and writable.
+ * Extends [PreferenceFragmentCompat] and routes module preferences through [YukiHookPrefsBridge].
  *
  * Extend this class instead of [PreferenceFragmentCompat].
  *
@@ -69,6 +69,7 @@ abstract class ModulePreferenceFragment : PreferenceFragmentCompat(), SharedPref
 
     @CallSuper
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+        preferenceManager.preferenceDataStore = YukiHookPreferenceDataStore(currentActivity, prefsName)
         currentSharedPrefs.registerOnSharedPreferenceChangeListener(this)
         makeNewXShareReadableIfPossible()
         onCreatePreferencesInModuleApp(savedInstanceState, rootKey)

@@ -24,6 +24,7 @@ package com.highcapable.yukihookapi.hook.xposed.application
 import android.app.Application
 import com.highcapable.yukihookapi.YukiHookAPI
 import com.highcapable.yukihookapi.hook.xposed.application.ModuleApplication.Companion.appContext
+import com.highcapable.yukihookapi.hook.xposed.bridge.service.YukiXposedService
 import com.highcapable.yukihookapi.hook.xposed.channel.YukiHookDataChannel
 import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
 
@@ -41,6 +42,9 @@ import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
  * - Loads [YukiHookAPI.Configs] in both module and host environments to avoid duplicate configuration.
  *
  * - Enables [YukiHookDataChannel] communication between the module and host.
+ *
+ * - Connects to available libxposed services for status, scope, and remote preferences.
+ * The process-wide libxposed service listener is owned by [YukiHookAPI]; do not replace it by registering another listener directly.
  *
  * - Exposes [YukiHookAPI.Status.isTaiChiModuleActive] for TaiChi and Wuji activation checks.
  */
@@ -62,6 +66,7 @@ open class ModuleApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         currentContext = this
+        YukiXposedService.register()
         // Calls [IYukiHookXposedInit.onInit] on the Hook entry class.
         runCatching { ModuleApplication_Impl.callHookEntryInit() }
         YukiHookDataChannel.instance().register(context = this)

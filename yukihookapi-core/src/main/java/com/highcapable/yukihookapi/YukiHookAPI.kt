@@ -43,6 +43,7 @@ import com.highcapable.yukihookapi.hook.param.PackageParam
 import com.highcapable.yukihookapi.hook.param.wrapper.PackageParamWrapper
 import com.highcapable.yukihookapi.hook.xposed.application.ModuleApplication
 import com.highcapable.yukihookapi.hook.xposed.bridge.YukiXposedModule
+import com.highcapable.yukihookapi.hook.xposed.bridge.service.YukiXposedService
 import com.highcapable.yukihookapi.hook.xposed.bridge.status.YukiXposedModuleStatus
 import com.highcapable.yukihookapi.hook.xposed.bridge.type.HookEntryType
 import com.highcapable.yukihookapi.hook.xposed.channel.YukiHookDataChannel
@@ -140,28 +141,26 @@ object YukiHookAPI {
         /**
          * Checks whether the module is active in Xposed, TaiChi, or Wuji.
          *
-         * - In the module environment, [Application] must extend [ModuleApplication].
+         * - In the module environment, [Application] must extend [ModuleApplication] to use libxposed service detection.
          *
-         * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
-         *
-         * - Under libxposed, self-hook detection also requires the module package in scope; otherwise query libxposed service from the module app.
+         * - When no libxposed service is available, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled for Xposed detection.
          *
          * - In a (Xposed) host environment, only the activation state excluding [isTaiChiModuleActive] is returned.
          * @return [Boolean] whether the module is active.
          */
-        val isModuleActive get() = isXposedEnvironment || YukiXposedModuleStatus.isActive || isTaiChiModuleActive
+        val isModuleActive get() = isXposedEnvironment || Service.isAvailable || YukiXposedModuleStatus.isActive || isTaiChiModuleActive
 
         /**
          * Checks only whether the module is active in Xposed.
          *
-         * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
+         * - In the module environment, [Application] must extend [ModuleApplication] to use libxposed service detection.
          *
-         * - Under libxposed, self-hook detection also requires the module package in scope; otherwise query libxposed service from the module app.
+         * - When no libxposed service is available, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
          *
          * - Always returns true in a (Xposed) host environment.
          * @return [Boolean] whether the module is active.
          */
-        val isXposedModuleActive get() = isXposedEnvironment || YukiXposedModuleStatus.isActive
+        val isXposedModuleActive get() = isXposedEnvironment || Service.isAvailable || YukiXposedModuleStatus.isActive
 
         /**
          * Checks only whether the module is active in TaiChi or Wuji.
@@ -176,63 +175,197 @@ object YukiHookAPI {
         /**
          * Checks whether the current Hook Framework supports Resources Hook.
          *
-         * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
+         * - In the module environment, the legacy status fallback requires [InjectYukiHookWithXposed.isUsingXposedModuleStatus] to be enabled.
          *
          * - Legacy resource replacement and layout hooks are unavailable in libxposed API 102, so this returns false there.
          * @return [Boolean] whether Resources Hook is supported.
          */
         val isSupportResourcesHook
-            get() = YukiXposedModule.isSupportResourcesHook.takeIf { isXposedEnvironment } ?: YukiXposedModuleStatus.isSupportResourcesHook
+            get() = when {
+                isXposedEnvironment -> YukiXposedModule.isSupportResourcesHook
+                Service.isAvailable -> false
+                else -> YukiXposedModuleStatus.isSupportResourcesHook
+            }
+
+        /**
+         * Access to libxposed services connected to the module application.
+         *
+         * The module's [Application] must extend [ModuleApplication] before these values become available.
+         *
+         * [YukiHookAPI] owns libxposed's single process-wide service listener. Registering another listener directly replaces this connection.
+         */
+        object Service {
+
+            /**
+             * Immutable information reported by a Hook Framework service.
+             * @property id the process-local identity of this service connection.
+             * @property name the Hook Framework name.
+             * @property apiLevel the libxposed service API level.
+             * @property versionName the Hook Framework version name.
+             * @property versionCode the Hook Framework version code.
+             * @property properties the Hook Framework property flags.
+             */
+            data class Framework(
+                val id: Long,
+                val name: String,
+                val apiLevel: Int,
+                val versionName: String,
+                val versionCode: Long,
+                val properties: Long
+            )
+
+            /** State of a running process hooked by the module. */
+            enum class RunningTargetState {
+                /** The process is running the currently installed module code. */
+                UP_TO_DATE,
+
+                /** The process is still running an older module version. */
+                STALE,
+
+                /** The process is currently being hot-reloaded. */
+                RELOADING,
+
+                /** The process's last hot reload attempt failed. */
+                FAILED
+            }
+
+            /**
+             * Diagnostic information about a process currently hooked by the module.
+             * @property framework the Hook Framework reporting this process.
+             * @property uid the process UID.
+             * @property pid the process ID.
+             * @property processName the Android process name.
+             * @property state the current module-code state.
+             * @property loadedVersionCode the module version code loaded in this process.
+             */
+            data class RunningTarget(
+                val framework: Framework,
+                val uid: Int,
+                val pid: Int,
+                val processName: String,
+                val state: RunningTargetState,
+                val loadedVersionCode: Long
+            )
+
+            /**
+             * Result delivered for one Hook Framework after a scope request.
+             * @property framework the Hook Framework handling this request.
+             * @property isApproved whether the request was approved.
+             * @property approvedPackages the packages approved by the Hook Framework.
+             * @property failureMessage the failure reason, or null when approved.
+             */
+            data class ScopeRequestResult(
+                val framework: Framework,
+                val isApproved: Boolean,
+                val approvedPackages: List<String> = emptyList(),
+                val failureMessage: String? = null
+            )
+
+            /**
+             * Whether at least one libxposed service is connected and responsive.
+             * @return [Boolean]
+             */
+            val isAvailable: Boolean get() = YukiXposedService.isAvailable
+
+            /**
+             * Gets all currently responsive Hook Framework services in binding order.
+             * @return [List] of [Framework].
+             */
+            val frameworks: List<Framework> get() = YukiXposedService.frameworks
+
+            /**
+             * Gets the module scope reported by each responsive Hook Framework service.
+             * @return [Map] from [Framework] to package names.
+             */
+            val scopes: Map<Framework, List<String>> get() = YukiXposedService.scopes
+
+            /**
+             * Gets running hooked processes reported by service API 102 Hook Frameworks.
+             * @return [List] of [RunningTarget].
+             */
+            val runningTargets: List<RunningTarget> get() = YukiXposedService.runningTargets
+
+            /**
+             * Requests packages to be added to the module scope in every responsive Hook Framework.
+             *
+             * The [callback] may run on a Binder thread and is invoked once for each dispatched request.
+             * @param packages package names to request.
+             * @param callback callback for each Hook Framework result.
+             * @return [Boolean] whether at least one request was dispatched.
+             */
+            fun requestScope(packages: List<String>, callback: (ScopeRequestResult) -> Unit): Boolean =
+                YukiXposedService.requestScope(packages.toList(), callback)
+
+            /**
+             * Removes packages from the module scope in every responsive Hook Framework.
+             * @param packages package names to remove.
+             * @return [Boolean] whether at least one removal was dispatched.
+             */
+            fun removeScope(packages: List<String>): Boolean = YukiXposedService.removeScope(packages.toList())
+        }
 
         /**
          * Information about the Hook Framework used by the current [YukiHookAPI].
+         *
+         * In the module environment, the primary libxposed service is preferred and the legacy injected status is used as a fallback.
          */
         object Executor {
 
             /**
              * Gets the current Hook Framework name.
              *
-             * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
              * @return [String] `unknown` when unavailable or `invalid` when resolution fails.
              */
             val name
-                get() = HookApiProperty.name.takeIf { isXposedEnvironment } ?: when {
-                    isXposedModuleActive -> YukiXposedModuleStatus.executorName
-                    isTaiChiModuleActive -> HookApiProperty.TAICHI_XPOSED_NAME
-                    else -> YukiXposedModuleStatus.executorName
-                }
+                get() = HookApiProperty.name.takeIf { isXposedEnvironment }
+                    ?: YukiXposedService.primaryFramework?.name
+                    ?: when {
+                        isXposedModuleActive -> YukiXposedModuleStatus.executorName
+                        isTaiChiModuleActive -> HookApiProperty.TAICHI_XPOSED_NAME
+                        else -> YukiXposedModuleStatus.executorName
+                    }
 
             /**
              * Gets the current Hook Framework type.
              *
-             * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
              * @return [ExecutorType]
              */
-            val type get() = HookApiProperty.type.takeIf { isXposedEnvironment } ?: HookApiProperty.type(YukiXposedModuleStatus.executorName)
+            val type
+                get() = HookApiProperty.type.takeIf { isXposedEnvironment }
+                    ?: YukiXposedService.primaryFramework?.let { HookApiProperty.type(it.name) }
+                    ?: HookApiProperty.type(YukiXposedModuleStatus.executorName)
 
             /**
              * Gets the current Hook Framework API version.
              *
-             * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
              * @return [Int] -1 when unavailable.
              */
-            val apiLevel get() = HookApiProperty.apiLevel.takeIf { isXposedEnvironment } ?: YukiXposedModuleStatus.executorApiLevel
+            val apiLevel
+                get() = HookApiProperty.apiLevel.takeIf { isXposedEnvironment }
+                    ?: YukiXposedService.primaryFramework?.apiLevel
+                    ?: YukiXposedModuleStatus.executorApiLevel
 
             /**
              * Gets the current Hook Framework version name.
              *
-             * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
              * @return [String] `unknown` when unavailable or `unsupported` when unsupported.
              */
-            val versionName get() = HookApiProperty.versionName.takeIf { isXposedEnvironment } ?: YukiXposedModuleStatus.executorVersionName
+            val versionName
+                get() = HookApiProperty.versionName.takeIf { isXposedEnvironment }
+                    ?: YukiXposedService.primaryFramework?.versionName
+                    ?: YukiXposedModuleStatus.executorVersionName
 
             /**
              * Gets the current Hook Framework version code.
              *
-             * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
              * @return [Int] -1 when unavailable or 0 when unsupported.
              */
-            val versionCode get() = HookApiProperty.versionCode.takeIf { isXposedEnvironment } ?: YukiXposedModuleStatus.executorVersionCode
+            val versionCode
+                get() = HookApiProperty.versionCode.takeIf { isXposedEnvironment }
+                    ?: YukiXposedService.primaryFramework?.versionCode?.let {
+                        it.takeIf { versionCode -> versionCode in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }?.toInt() ?: -1
+                    }
+                    ?: YukiXposedModuleStatus.executorVersionCode
         }
     }
 

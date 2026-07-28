@@ -31,6 +31,7 @@ android {
 dependencies {
     compileOnly(libs.libxposed.api)
     compileOnly(projects.yukihookapiStub)
+    implementation(libs.libxposed.service)
     implementation(libs.hiddenapibypass)
     implementation(platform(libs.kavaref.bom))
     implementation(libs.kavaref.core)
