@@ -35,7 +35,7 @@ import com.highcapable.yukihookapi.hook.xposed.bridge.resources.YukiModuleResour
 import com.highcapable.yukihookapi.hook.xposed.bridge.resources.YukiResources
 import com.highcapable.yukihookapi.hook.xposed.bridge.type.HookEntryType
 import com.highcapable.yukihookapi.hook.xposed.parasitic.AppParasitics
-import dalvik.system.PathClassLoader
+import io.github.libxposed.api.XposedInterface
 
 /**
  * Core Xposed module implementation.
@@ -166,7 +166,7 @@ internal object YukiXposedModule : IYukiXposedModuleLifecycle {
             wrapper.type = type
             packageName?.takeIf { it.isNotBlank() }?.also { wrapper.packageName = it }
             processName?.takeIf { it.isNotBlank() }?.also { wrapper.processName = it }
-            appClassLoader?.takeIf { type == HookEntryType.ZYGOTE || it is PathClassLoader }?.also { wrapper.appClassLoader = it }
+            appClassLoader?.also { wrapper.appClassLoader = it }
             appInfo?.also { wrapper.appInfo = it }
             appResources?.also { wrapper.appResources = it }
         }
@@ -177,7 +177,8 @@ internal object YukiXposedModule : IYukiXposedModuleLifecycle {
         dynamicModuleAppResources?.let { moduleAppResources = it }
     }
 
-    override fun onStartLoadModule(packageName: String, appFilePath: String) {
+    override fun onStartLoadModule(base: XposedInterface, packageName: String, appFilePath: String) {
+        HookApiCategoryHelper.attach(base)
         isModuleLoaded = true
         modulePackageName = packageName
         moduleAppFilePath = appFilePath
@@ -211,7 +212,7 @@ internal object YukiXposedModule : IYukiXposedModuleLifecycle {
                 else null
         }?.also {
             runCatching {
-                if (it.isCorrectProcess) packageParamCallback?.invoke(it.instantiate().assign(it).apply { YukiHookAPI.printSplashInfo() })
+                packageParamCallback?.invoke(it.instantiate().assign(it).apply { YukiHookAPI.printSplashInfo() })
                 if (it.type != HookEntryType.ZYGOTE && it.packageName == modulePackageName)
                     AppParasitics.hookModuleAppRelated(it.appClassLoader, it.type)
                 if (it.type == HookEntryType.PACKAGE) AppParasitics.registerToAppLifecycle(it.packageName)

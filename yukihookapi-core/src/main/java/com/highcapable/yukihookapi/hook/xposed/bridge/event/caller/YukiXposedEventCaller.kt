@@ -24,39 +24,31 @@
 package com.highcapable.yukihookapi.hook.xposed.bridge.event.caller
 
 import com.highcapable.yukihookapi.hook.xposed.bridge.event.YukiXposedEvent
-import de.robv.android.xposed.IXposedHookZygoteInit
-import de.robv.android.xposed.callbacks.XC_InitPackageResources
-import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
+import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
+import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
-/**
- * Dispatches native Xposed API loading events to registered callbacks.
- */
+/** Dispatches native libxposed lifecycle events to registered callbacks. */
 internal object YukiXposedEventCaller {
 
-    /**
-     * Dispatches the `initZygote` event.
-     * @param sparam the Xposed API parameters.
-     */
-    internal fun callInitZygote(sparam: IXposedHookZygoteInit.StartupParam?) {
-        if (sparam == null) return
-        YukiXposedEvent.initZygoteCallback?.invoke(sparam)
+    /** Dispatches the `onModuleLoaded` event. */
+    internal fun callOnModuleLoaded(param: ModuleLoadedParam) {
+        YukiXposedEvent.moduleLoadedCallback?.invoke(param)
     }
 
-    /**
-     * Dispatches the `handleLoadPackage` event.
-     * @param lpparam the Xposed API parameters.
-     */
-    internal fun callHandleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam?) {
-        if (lpparam == null) return
-        YukiXposedEvent.handleLoadPackageCallback?.invoke(lpparam)
+    /** Dispatches the `onPackageLoaded` event. */
+    internal fun callOnPackageLoaded(param: PackageLoadedParam) {
+        YukiXposedEvent.packageLoadedCallback?.invoke(param)
     }
 
-    /**
-     * Dispatches the `handleInitPackageResources` event.
-     * @param resparam the Xposed API parameters.
-     */
-    internal fun callHandleInitPackageResources(resparam: XC_InitPackageResources.InitPackageResourcesParam?) {
-        if (resparam == null) return
-        YukiXposedEvent.handleInitPackageResourcesCallback?.invoke(resparam)
+    /** Dispatches the `onPackageReady` event. */
+    internal fun callOnPackageReady(param: PackageReadyParam) {
+        YukiXposedEvent.packageReadyCallback?.invoke(param)
+    }
+
+    /** Dispatches the `onSystemServerStarting` event. */
+    internal fun callOnSystemServerStarting(param: SystemServerStartingParam) {
+        YukiXposedEvent.systemServerStartingCallback?.invoke(param)
     }
 }

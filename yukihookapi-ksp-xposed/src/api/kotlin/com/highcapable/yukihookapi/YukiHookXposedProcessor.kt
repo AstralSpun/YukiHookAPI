@@ -40,6 +40,8 @@ import com.highcapable.yukihookapi.factory.PackageName
 import com.highcapable.yukihookapi.factory.sources
 import com.highcapable.yukihookapi.generated.YukiHookAPIProperties
 import java.io.File
+import java.io.StringWriter
+import java.util.Properties
 import java.util.regex.Pattern
 
 /**
@@ -198,12 +200,7 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
             }
         }
 
-        /**
-         * Generates the Xposed assets entry file.
-         * @param codePath the full source path of the annotated class.
-         * @param sourcePath the configured source path.
-         * @param data the template generation data.
-         */
+        /** Generates Xposed module metadata and source files. */
         private fun generateAssetsFile(codePath: String, sourcePath: String, data: GenerateData) = environment {
             if (codePath.isBlank()) problem(msg = "Project code path not available")
             if (sourcePath.isBlank()) problem(msg = "Project source path not available")
@@ -213,18 +210,37 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
             val manifestFile = projectDir.resolve(sourcePath).resolve("AndroidManifest.xml")
             val assetsDir = projectDir.resolve(sourcePath).resolve("assets")
             val metaInfDir = projectDir.resolve(sourcePath).resolve("resources").resolve("META-INF")
+            val xposedMetaInfDir = metaInfDir.resolve("xposed")
             if (manifestFile.exists()) {
-                if (assetsDir.exists().not() || assetsDir.isDirectory.not()) assetsDir.apply { delete(); mkdirs() }
                 if (metaInfDir.exists().not() || metaInfDir.isDirectory.not()) metaInfDir.apply { delete(); mkdirs() }
+                if (xposedMetaInfDir.exists().not() || xposedMetaInfDir.isDirectory.not())
+                    xposedMetaInfDir.apply { delete(); mkdirs() }
                 data.modulePackageName = parseModulePackageName(projectDir)
                 if (data.modulePackageName.isBlank() && data.customMPackageName.isBlank())
                     problem(msg = "Cannot identify your Module App's package name, please make sure \"BuildConfig.java\" is generated correctly")
-                assetsDir.resolve("xposed_init").writeText(text = "${data.entryPackageName}.${data.xInitClassName}")
+                xposedMetaInfDir.resolve("java_init.list").writeText(text = "${data.entryPackageName}.${data.xInitClassName}\n")
+                updateModuleProperties(xposedMetaInfDir.resolve("module.prop"))
                 metaInfDir.resolve("yukihookapi_init").writeText(text = "${data.entryPackageName}.${data.entryClassName}")
-                // Removes the entry-class name file created by older API versions.
+                // Removes entry files created by older YukiHookAPI versions.
+                assetsDir.resolve("xposed_init").apply { if (exists()) delete() }
                 assetsDir.resolve("yukihookapi_init").apply { if (exists()) delete() }
                 generateClassFile(data)
             } else problem(msg = "Project source path \"$sourcePath\" verify failed, is this an Android project?")
+        }
+
+        /** Updates the required libxposed properties while retaining framework-specific options. */
+        private fun updateModuleProperties(modulePropertiesFile: File) {
+            val properties = Properties().apply {
+                if (modulePropertiesFile.isFile) modulePropertiesFile.inputStream().use { load(it) }
+                setProperty("minApiVersion", "102")
+                setProperty("targetApiVersion", "102")
+            }
+            val writer = StringWriter()
+            properties.store(writer, null)
+            modulePropertiesFile.writeText(
+                writer.toString().lineSequence().filter { it.isNotBlank() && it.startsWith("#").not() }
+                    .joinToString(separator = "\n", postfix = "\n")
+            )
         }
 
         /**
@@ -235,6 +251,10 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
             if (data.customMPackageName.isNotBlank()) warn(
                 msg = "You set the customize module package name to \"${data.customMPackageName}\", " +
                     "please check for yourself if it is correct"
+            )
+            if (data.isUsingResourcesHook) warn(
+                msg = "Legacy XResources replacement and layout hooks are unavailable in libxposed API 102; " +
+                    "module resource injection remains available"
             )
             // Generates YukiHookAPI_Impl.
             createCodeFile(
@@ -286,13 +306,13 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
                 packageName = PackageName.IActivityManagerProxyClass,
                 content = data.sources()[ClassName.IActivityManagerProxyClass]
             )
-            // Generates xposed_init.
+            // Generates the libxposed entry.
             createCodeFile(
                 fileName = data.xInitClassName,
                 packageName = data.entryPackageName,
                 content = data.sources()[ClassName.XposedInit]
             )
-            // Generates xposed_init_Impl.
+            // Generates the libxposed entry implementation.
             createCodeFile(
                 fileName = "${data.entryClassName}_Impl",
                 packageName = data.entryPackageName,

@@ -27,7 +27,6 @@ package com.highcapable.yukihookapi.hook.xposed.parasitic
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityManager
-import android.app.AndroidAppHelper
 import android.app.Application
 import android.app.Instrumentation
 import android.content.Context
@@ -139,32 +138,30 @@ internal object AppParasitics {
      * @return [Application] or null.
      */
     internal val currentApplication
-        get() = runCatching { AndroidAppHelper.currentApplication() }.getOrNull()
-            ?: ActivityThreadClass.resolve()
-                .processor(AndroidHiddenApiBypassResolver.get())
-                .optional(silent = true)
-                .firstMethodOrNull { name = "currentApplication" }
-                ?.invoke<Application>()
+        get() = ActivityThreadClass.resolve()
+            .processor(AndroidHiddenApiBypassResolver.get())
+            .optional(silent = true)
+            .firstMethodOrNull { name = "currentApplication" }
+            ?.invoke<Application>()
 
     /**
      * Gets the current host [ApplicationInfo].
      * @return [ApplicationInfo] or null.
      */
     internal val currentApplicationInfo
-        get() = runCatching { AndroidAppHelper.currentApplicationInfo() }.getOrNull()
-            ?: let {
-                val scope = ActivityThreadClass.resolve()
-                    .processor(AndroidHiddenApiBypassResolver.get())
-                    .optional(silent = true)
-                val current = scope.firstMethodOrNull {
-                    name = "currentActivityThread"
-                    emptyParameters()
-                }?.invoke()
-                val currentScope = current?.asResolver()?.optional(silent = true)
-                val mBoundApplication = currentScope?.firstFieldOrNull { name = "mBoundApplication" }?.get()
-                val appScope = mBoundApplication?.asResolver()?.optional(silent = true)
-                appScope?.firstFieldOrNull { name = "appInfo" }?.get<ApplicationInfo>()
-            }
+        get() = let {
+            val scope = ActivityThreadClass.resolve()
+                .processor(AndroidHiddenApiBypassResolver.get())
+                .optional(silent = true)
+            val current = scope.firstMethodOrNull {
+                name = "currentActivityThread"
+                emptyParameters()
+            }?.invoke()
+            val currentScope = current?.asResolver()?.optional(silent = true)
+            val mBoundApplication = currentScope?.firstFieldOrNull { name = "mBoundApplication" }?.get()
+            val appScope = mBoundApplication?.asResolver()?.optional(silent = true)
+            appScope?.firstFieldOrNull { name = "appInfo" }?.get<ApplicationInfo>()
+        }
 
     /**
      * Gets the current host package name.
@@ -177,13 +174,12 @@ internal object AppParasitics {
      * @return [String]
      */
     internal val currentProcessName
-        get() = runCatching { AndroidAppHelper.currentProcessName() }.getOrNull()
-            ?: ActivityThreadClass.resolve()
-                .processor(AndroidHiddenApiBypassResolver.get())
-                .optional(silent = true)
-                .firstMethodOrNull { name = "currentPackageName" }
-                ?.invoke<String>()
-                ?.takeIf { it.isNotBlank() }
+        get() = ActivityThreadClass.resolve()
+            .processor(AndroidHiddenApiBypassResolver.get())
+            .optional(silent = true)
+            .firstMethodOrNull { name = "currentProcessName" }
+            ?.invoke<String>()
+            ?.takeIf { it.isNotBlank() }
             ?: SYSTEM_FRAMEWORK_NAME
 
     /**
@@ -404,13 +400,10 @@ internal object AppParasitics {
         if (YukiXposedModule.isXposedEnvironment) runCatching {
             if (currentPackageName == YukiXposedModule.modulePackageName)
                 return YLog.innerE("You cannot inject module resources into yourself")
-            hostResources.assets.asResolver()
-                .processor(AndroidHiddenApiBypassResolver.get())
-                .optional(silent = true)
-                .firstMethodOrNull {
-                    name = "addAssetPath"
-                    parameters(String::class)
-                }?.invoke(YukiXposedModule.moduleAppFilePath)
+            val moduleResources = YukiXposedModule.moduleAppResources
+                ?: YukiXposedModule.dynamicModuleAppResources
+                ?: error("Current module Resources are unavailable")
+            moduleResources.injectTo(hostResources)
         }.onFailure {
             YLog.innerE("Failed to inject module resources into [$hostResources]", it)
         } else YLog.innerW("You can only inject module resources in Xposed Environment")

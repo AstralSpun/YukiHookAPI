@@ -21,10 +21,10 @@
  */
 package com.highcapable.yukihookapi.hook.xposed.bridge.delegate
 
-import de.robv.android.xposed.XSharedPreferences
+import com.highcapable.yukihookapi.hook.core.api.compat.HookApiCategoryHelper
 
 /**
- * Proxies [XSharedPreferences].
+ * Proxies the remote preferences exposed by libxposed.
  * @param packageName the app package name.
  * @param prefFileName the preferences file name.
  */
@@ -43,7 +43,10 @@ internal class XSharedPreferencesDelegate private constructor(private val packag
 
     /**
      * Gets the proxied instance.
-     * @return [XSharedPreferences]
+     * @return [android.content.SharedPreferences]
      */
-    internal val instance by lazy { XSharedPreferences(packageName, prefFileName) }
+    internal val instance by lazy {
+        if (packageName.isBlank()) error("Xposed module package name is unavailable")
+        HookApiCategoryHelper.base.getRemotePreferences(prefFileName)
+    }
 }

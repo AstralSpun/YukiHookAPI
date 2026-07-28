@@ -21,15 +21,26 @@
  */
 package com.highcapable.yukihookapi.hook.core.api.compat
 
-import de.robv.android.xposed.XposedBridge
+import io.github.libxposed.api.XposedInterface
 
 /**
  * Resolves the Hook API available in the current environment.
  */
 internal object HookApiCategoryHelper {
 
+    /** The framework interface attached to the current module entry. */
+    private var baseInstance: XposedInterface? = null
+
     /** Supported API implementations in descending selection priority. */
-    private val supportedCategories = arrayOf(HookApiCategory.ROVO89_XPOSED)
+    private val supportedCategories = arrayOf(HookApiCategory.LIBXPOSED)
+
+    /** Gets the framework interface attached to the current module entry. */
+    internal val base get() = baseInstance ?: error("The libxposed framework interface has not been attached")
+
+    /** Attaches the framework interface supplied to the generated module entry. */
+    internal fun attach(base: XposedInterface) {
+        baseInstance = base
+    }
 
     /**
      * Gets the currently available API implementation.
@@ -52,7 +63,7 @@ internal object HookApiCategoryHelper {
      * @return [Boolean]
      */
     private fun hasCategory(category: HookApiCategory) = when (category) {
-        HookApiCategory.ROVO89_XPOSED -> runCatching { XposedBridge.getXposedVersion(); true }.getOrNull() ?: false
+        HookApiCategory.LIBXPOSED -> baseInstance != null
         else -> false
     }
 }

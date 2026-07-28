@@ -25,8 +25,8 @@ package com.highcapable.yukihookapi.hook.core.api.compat
  * Identifies the active Hook API implementation.
  */
 internal enum class HookApiCategory {
-    /** Original Xposed API. */
-    ROVO89_XPOSED,
+    /** Modern libxposed API. */
+    LIBXPOSED,
 
     /** Unknown API implementation. */
     UNKNOWN

@@ -24,42 +24,30 @@
 package com.highcapable.yukihookapi.hook.xposed.bridge.resources
 
 import android.content.res.Resources
-import android.content.res.XResForwarder
 
 /**
- * Wraps a [XResForwarder] instance.
- * @param baseInstance the original instance.
+ * Identifies a resource value in a source [Resources] instance.
+ * @param resources the source resources.
+ * @param id the source resource ID.
  */
-class YukiResForwarder private constructor(private val baseInstance: XResForwarder) {
+class YukiResForwarder private constructor(val resources: Resources, val id: Int) {
 
     internal companion object {
 
         /**
-         * Creates a [YukiResForwarder] from [XResForwarder].
-         * @param baseInstance the [XResForwarder] instance.
+         * Creates a [YukiResForwarder] from a resource instance and ID.
+         * @param resources the source resources.
+         * @param id the source resource ID.
          * @return [YukiResForwarder]
          */
-        internal fun wrapper(baseInstance: XResForwarder) = YukiResForwarder(baseInstance)
+        internal fun wrapper(resources: Resources, id: Int) = YukiResForwarder(resources, id)
     }
 
     /**
-     * Gets the wrapped [XResForwarder] instance.
-     * @return [XResForwarder]
+     * Gets the wrapped forwarder instance.
+     * @return [YukiResForwarder]
      */
-    internal val instance get() = baseInstance
+    internal val instance get() = this
 
-    /**
-     * Gets the current resource ID.
-     * @return [Int]
-     */
-    val id get() = baseInstance.id
-
-    /**
-     * Gets the current [Resources].
-     * @return [Resources]
-     * @throws IllegalStateException if [XResForwarder] is invalid.
-     */
-    val resources get() = baseInstance.resources ?: error("XResForwarder is invalid")
-
-    override fun toString() = "YukiResForwarder by $baseInstance"
+    override fun toString() = "YukiResForwarder(resources=$resources, id=$id)"
 }

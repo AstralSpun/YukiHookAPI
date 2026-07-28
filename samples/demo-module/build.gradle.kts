@@ -31,7 +31,7 @@ android {
 }
 
 dependencies {
-    compileOnly(libs.rovo89.xposed.api)
+    compileOnly(libs.libxposed.api)
     implementation(projects.yukihookapiCore)
     ksp(projects.yukihookapiKspXposed)
     implementation(platform(libs.kavaref.bom))

@@ -29,6 +29,7 @@ package com.highcapable.yukihookapi.hook.core
 import android.content.res.Resources
 import com.highcapable.yukihookapi.YukiHookAPI
 import com.highcapable.yukihookapi.hook.bean.HookResources
+import com.highcapable.yukihookapi.hook.core.api.compat.HookApiCategory
 import com.highcapable.yukihookapi.hook.core.api.compat.HookApiCategoryHelper
 import com.highcapable.yukihookapi.hook.log.YLog
 import com.highcapable.yukihookapi.hook.param.PackageParam
@@ -58,9 +59,11 @@ class YukiResourcesHookCreator internal constructor(internal val packageParam: P
     /** Hook execution entry point. */
     internal fun hook() {
         if (HookApiCategoryHelper.hasAvailableHookApi.not()) return
+        if (preHookResources.isEmpty()) return YLog.innerW("Hook Resources is empty, hook aborted")
+        if (HookApiCategoryHelper.currentCategory == HookApiCategory.LIBXPOSED)
+            return preHookResources.forEach { (_, resource) -> resource.reportUnsupported() }
         // Filters [HookEntryType.ZYGOTE] and [HookEntryType.RESOURCES].
         if (packageParam.wrapper?.type == HookEntryType.PACKAGE) return
-        if (preHookResources.isEmpty()) return YLog.innerW("Hook Resources is empty, hook aborted")
         preHookResources.forEach { (_, r) -> r.hook() }
     }
 
@@ -187,6 +190,16 @@ class YukiResourcesHookCreator internal constructor(internal val packageParam: P
          * @return [Any]
          */
         private fun compat(any: Any?) = if (any is ModuleResFwd) packageParam.moduleAppResources.fwd(any.resId) else any
+
+        /** Reports that legacy resource hooks are unavailable in libxposed. */
+        internal fun reportUnsupported() {
+            if (isHooked || isDisableCreatorRunHook) return
+            isHooked = true
+            UnsupportedOperationException("Resources Hook is not supported by libxposed API 102 [$tag]").also {
+                if (onHookFailureCallback == null) YLog.innerE(it.message ?: "Resources Hook is unavailable", it)
+                else onHookFailureCallback?.invoke(it)
+            }
+        }
 
         /**
          * Hook creation entry point.

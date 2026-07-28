@@ -1,2 +1,4 @@
 /src/main/assets/xposed_init
+/src/main/resources/META-INF/xposed/java_init.list
+/src/main/resources/META-INF/xposed/module.prop
 /src/main/resources/META-INF/yukihookapi_init

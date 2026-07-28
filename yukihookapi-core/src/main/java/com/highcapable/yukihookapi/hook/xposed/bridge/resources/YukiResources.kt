@@ -19,23 +19,22 @@
  *
  * This file is created by fankes on 2022/4/29.
  */
-@file:Suppress("unused", "DEPRECATION", "DiscouragedApi", "NON_PUBLIC_CALL_FROM_PUBLIC_INLINE")
+@file:Suppress("unused", "DEPRECATION", "DiscouragedApi", "NON_PUBLIC_CALL_FROM_PUBLIC_INLINE", "UNUSED_PARAMETER")
 
 package com.highcapable.yukihookapi.hook.xposed.bridge.resources
 
 import android.content.res.Resources
-import android.content.res.XResources
-import android.graphics.drawable.Drawable
 import android.view.View
 import com.highcapable.yukihookapi.hook.log.YLog
-import com.highcapable.yukihookapi.hook.xposed.bridge.resources.YukiResources.LayoutInflatedParam
-import de.robv.android.xposed.callbacks.XC_LayoutInflated
 
 /**
- * Adapter layer for [XResources].
+ * Adapter layer for host [Resources].
+ *
+ * Legacy Xposed resource replacement and layout callbacks are not available in libxposed API 102.
+ * Module resource loading remains available through `injectModuleAppResources`.
  * @param baseInstance the original instance.
  */
-class YukiResources private constructor(private val baseInstance: XResources) :
+class YukiResources private constructor(private val baseInstance: Resources) :
     Resources(
         runCatching { baseInstance.assets }.getOrNull(),
         runCatching { baseInstance.displayMetrics }.getOrNull(),
@@ -44,224 +43,86 @@ class YukiResources private constructor(private val baseInstance: XResources) :
 
         internal companion object {
 
-            /**
-             * Creates a [YukiResources] instance from [XResources].
-             * @param baseInstance the [XResources] instance.
-             * @return [YukiResources]
-             */
-            internal fun wrapper(baseInstance: XResources) = YukiResources(baseInstance)
+            /** Creates a [YukiResources] instance from [Resources]. */
+            internal fun wrapper(baseInstance: Resources) = YukiResources(baseInstance)
 
-            /**
-             * Adapts a resource replacement for compatibility.
-             * @param replacement the resource replacement.
-             * @return [Any] the adapted resource replacement.
-             */
-            private fun compat(replacement: Any?) = when (replacement) {
-                is YukiResForwarder -> replacement.instance
-                is Drawable -> object : XResources.DrawableLoader() {
-                    override fun newDrawable(res: XResources?, id: Int): Drawable = replacement
-                }
-                else -> replacement
-            }
+            /** Reports an operation removed from the modern Xposed API. */
+            private fun unsupported(name: String) =
+                YLog.innerE("Resources Hook operation \"$name\" is not supported by libxposed API 102")
 
-            /**
-             * Replaces resources in Zygote.
-             *
-             * Adapts [XResources.setSystemWideReplacement].
-             * @param resId resources Id.
-             * @param replacement the resource replacement.
-             * @param callback the callback invoked after successful execution.
-             */
+            /** Legacy system-wide replacement compatibility entry. */
             internal fun setSystemWideReplacement(resId: Int, replacement: Any?, callback: () -> Unit = {}) =
-                runIfAnyErrors(name = "setSystemWideReplacement") {
-                    XResources.setSystemWideReplacement(resId, compat(replacement))
-                    callback()
-                }
+                unsupported("setSystemWideReplacement")
 
-            /**
-             * Replaces resources in Zygote.
-             *
-             * Adapts [XResources.setSystemWideReplacement].
-             * @param packageName the package name.
-             * @param type the resource type.
-             * @param name the resource name.
-             * @param replacement the resource replacement.
-             * @param callback the callback invoked after successful execution.
-             */
-            internal fun setSystemWideReplacement(packageName: String, type: String, name: String, replacement: Any?, callback: () -> Unit = {}) =
-                runIfAnyErrors(name = "setSystemWideReplacement") {
-                    XResources.setSystemWideReplacement(packageName, type, name, compat(replacement))
-                    callback()
-                }
+            /** Legacy system-wide replacement compatibility entry. */
+            internal fun setSystemWideReplacement(
+                packageName: String,
+                type: String,
+                name: String,
+                replacement: Any?,
+                callback: () -> Unit = {}
+            ) = unsupported("setSystemWideReplacement")
 
-            /**
-             * Hooks a layout resource in Zygote.
-             *
-             * Adapts [XResources.hookSystemWideLayout].
-             * @param resId resources Id.
-             * @param initiate the injection block.
-             * @param callback the callback invoked after successful execution.
-             */
+            /** Legacy system-wide layout callback compatibility entry. */
             internal fun hookSystemWideLayout(resId: Int, initiate: LayoutInflatedParam.() -> Unit, callback: () -> Unit = {}) =
-                runIfAnyErrors(name = "hookSystemWideLayout") {
-                    XResources.hookSystemWideLayout(resId, object : XC_LayoutInflated() {
-                        override fun handleLayoutInflated(liparam: LayoutInflatedParam?) {
-                            if (liparam == null) return
-                            initiate(LayoutInflatedParam(liparam))
-                        }
-                    })
-                    callback()
-                }
+                unsupported("hookSystemWideLayout")
 
-            /**
-             * Hooks a layout resource in Zygote.
-             *
-             * Adapts [XResources.hookSystemWideLayout].
-             * @param packageName the package name.
-             * @param type the resource type.
-             * @param name the resource name.
-             * @param initiate the injection block.
-             * @param callback the callback invoked after successful execution.
-             */
+            /** Legacy system-wide layout callback compatibility entry. */
             internal fun hookSystemWideLayout(
                 packageName: String,
                 type: String,
                 name: String,
                 initiate: LayoutInflatedParam.() -> Unit,
                 callback: () -> Unit = {}
-            ) = runIfAnyErrors(name = "hookSystemWideLayout") {
-                XResources.hookSystemWideLayout(packageName, type, name, object : XC_LayoutInflated() {
-                    override fun handleLayoutInflated(liparam: LayoutInflatedParam?) {
-                        if (liparam == null) return
-                        initiate(LayoutInflatedParam(liparam))
-                    }
-                })
-                callback()
-            }
-
-            /**
-             * Executes while handling any exception.
-             * @param name the method name.
-             * @param initiate the block to execute.
-             */
-            private inline fun runIfAnyErrors(name: String, initiate: () -> Unit) {
-                runCatching {
-                    initiate()
-                }.onFailure { YLog.innerE("Failed to execute method \"$name\", maybe your Hook Framework not support Resources Hook", it) }
-            }
+            ) = unsupported("hookSystemWideLayout")
         }
 
-        /**
-         * Replaces a resource.
-         *
-         * Adapts [XResources.setReplacement].
-         * @param resId resources Id.
-         * @param replacement the resource replacement.
-         * @param callback the callback invoked after successful execution.
-         */
-        internal fun setReplacement(resId: Int, replacement: Any?, callback: () -> Unit = {}) =
-            runIfAnyErrors(name = "setReplacement") {
-                baseInstance.setReplacement(resId, compat(replacement))
-                callback()
-            }
+        /** Legacy resource replacement compatibility entry. */
+        internal fun setReplacement(resId: Int, replacement: Any?, callback: () -> Unit = {}) = unsupported("setReplacement")
 
-        /**
-         * Replaces a resource.
-         *
-         * Adapts [XResources.setReplacement].
-         * @param packageName the package name.
-         * @param type the resource type.
-         * @param name the resource name.
-         * @param replacement the resource replacement.
-         * @param callback the callback invoked after successful execution.
-         */
-        internal fun setReplacement(packageName: String, type: String, name: String, replacement: Any?, callback: () -> Unit = {}) =
-            runIfAnyErrors(name = "setReplacement") {
-                baseInstance.setReplacement(packageName, type, name, compat(replacement))
-                callback()
-            }
+        /** Legacy resource replacement compatibility entry. */
+        internal fun setReplacement(
+            packageName: String,
+            type: String,
+            name: String,
+            replacement: Any?,
+            callback: () -> Unit = {}
+        ) = unsupported("setReplacement")
 
-        /**
-         * Hooks a layout resource.
-         *
-         * Adapts [XResources.hookLayout].
-         * @param resId resources Id.
-         * @param initiate the injection block.
-         * @param callback the callback invoked after successful execution.
-         */
-        internal fun hookLayout(resId: Int, initiate: LayoutInflatedParam.() -> Unit, callback: () -> Unit = {}) =
-            runIfAnyErrors(name = "hookLayout") {
-                baseInstance.hookLayout(resId, object : XC_LayoutInflated() {
-                    override fun handleLayoutInflated(liparam: LayoutInflatedParam?) {
-                        if (liparam == null) return
-                        initiate(LayoutInflatedParam(liparam))
-                    }
-                })
-                callback()
-            }
+        /** Legacy layout callback compatibility entry. */
+        internal fun hookLayout(resId: Int, initiate: LayoutInflatedParam.() -> Unit, callback: () -> Unit = {}) = unsupported("hookLayout")
 
-        /**
-         * Hooks a layout resource.
-         *
-         * Adapts [XResources.hookLayout].
-         * @param packageName the package name.
-         * @param type the resource type.
-         * @param name the resource name.
-         * @param initiate the injection block.
-         * @param callback the callback invoked after successful execution.
-         */
+        /** Legacy layout callback compatibility entry. */
         internal fun hookLayout(
             packageName: String,
             type: String,
             name: String,
             initiate: LayoutInflatedParam.() -> Unit,
             callback: () -> Unit = {}
-        ) = runIfAnyErrors(name = "hookLayout") {
-            baseInstance.hookLayout(packageName, type, name, object : XC_LayoutInflated() {
-                override fun handleLayoutInflated(liparam: LayoutInflatedParam?) {
-                    if (liparam == null) return
-                    initiate(LayoutInflatedParam(liparam))
-                }
-            })
-            callback()
-        }
+        ) = unsupported("hookLayout")
 
         /**
          * Target layout resource implementation for the host app.
-         * @param baseParam the adapted [XC_LayoutInflated.LayoutInflatedParam].
+         * @param variantName the resource directory qualifier.
+         * @param currentView the inflated layout root.
+         * @param resources the host resources.
+         * @param packageName the host package name.
          */
-        class LayoutInflatedParam(private val baseParam: XC_LayoutInflated.LayoutInflatedParam) {
+        class LayoutInflatedParam internal constructor(
+            val variantName: String,
+            val currentView: View,
+            private val resources: Resources,
+            private val packageName: String
+        ) {
 
-            /**
-             * Gets the resource directory qualifier of the currently hooked layout.
-             *
-             * For example: `layout`, `layout-land`, or `layout-sw600dp`.
-             * @return [String]
-             */
-            val variantName get() = baseParam.variant ?: ""
-
-            /**
-             * Gets the currently hooked layout instance.
-             * @return [View]
-             */
-            val currentView get() = baseParam.view ?: error("LayoutInflatedParam View instance got null")
-
-            /**
-             * Finds a [View] with the specified ID in the host app by identifier.
-             * @param name the ID identifier name.
-             * @return [T] or null.
-             */
+            /** Finds a [View] with the specified ID in the host app by identifier. */
             inline fun <reified T : View> View.findViewByIdentifier(name: String): T? =
-                findViewById(baseParam.res.getIdentifier(name, "id", baseParam.resNames.pkg))
+                findViewById(resources.getIdentifier(name, "id", packageName))
 
-            /**
-             * Finds a [View] with the specified ID in the host app's currently loaded layout by identifier.
-             * @param name the ID identifier name.
-             * @return [T] or null.
-             */
+            /** Finds a [View] with the specified ID in the currently loaded layout by identifier. */
             inline fun <reified T : View> findViewByIdentifier(name: String) = currentView.findViewByIdentifier<T>(name)
 
-            override fun toString() = "LayoutInflatedParam by $baseParam"
+            override fun toString() = "LayoutInflatedParam(variantName=$variantName, currentView=$currentView)"
         }
 
         override fun toString() = "YukiResources by $baseInstance"

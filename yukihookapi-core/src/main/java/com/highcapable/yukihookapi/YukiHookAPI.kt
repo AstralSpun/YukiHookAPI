@@ -144,6 +144,8 @@ object YukiHookAPI {
          *
          * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
          *
+         * - Under libxposed, self-hook detection also requires the module package in scope; otherwise query libxposed service from the module app.
+         *
          * - In a (Xposed) host environment, only the activation state excluding [isTaiChiModuleActive] is returned.
          * @return [Boolean] whether the module is active.
          */
@@ -153,6 +155,8 @@ object YukiHookAPI {
          * Checks only whether the module is active in Xposed.
          *
          * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
+         *
+         * - Under libxposed, self-hook detection also requires the module package in scope; otherwise query libxposed service from the module app.
          *
          * - Always returns true in a (Xposed) host environment.
          * @return [Boolean] whether the module is active.
@@ -174,9 +178,7 @@ object YukiHookAPI {
          *
          * - In the module environment, [InjectYukiHookWithXposed.isUsingXposedModuleStatus] must be enabled.
          *
-         * - In a (Xposed) host environment, true may be returned only after a delayed event callback.
-         *
-         * - Ensure that [InjectYukiHookWithXposed.isUsingResourcesHook] is enabled. Otherwise this always returns false.
+         * - Legacy resource replacement and layout hooks are unavailable in libxposed API 102, so this returns false there.
          * @return [Boolean] whether Resources Hook is supported.
          */
         val isSupportResourcesHook

@@ -25,7 +25,6 @@ package com.highcapable.yukihookapi.demo_module.hook
 
 import android.app.Activity
 import android.os.Bundle
-import android.widget.Button
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.highcapable.betterandroid.system.extension.utils.AndroidVersion
 import com.highcapable.betterandroid.ui.extension.component.startActivity
@@ -37,13 +36,12 @@ import com.highcapable.yukihookapi.demo_module.R
 import com.highcapable.yukihookapi.demo_module.data.DataConst
 import com.highcapable.yukihookapi.demo_module.hook.factory.compatStyle
 import com.highcapable.yukihookapi.demo_module.ui.MainActivity
-import com.highcapable.yukihookapi.hook.core.annotation.LegacyResourcesHook
 import com.highcapable.yukihookapi.hook.factory.applyModuleTheme
 import com.highcapable.yukihookapi.hook.factory.registerModuleAppActivities
 import com.highcapable.yukihookapi.hook.xposed.bridge.event.YukiXposedEvent
 import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
 
-@InjectYukiHookWithXposed(isUsingResourcesHook = true)
+@InjectYukiHookWithXposed
 object HookEntry : IYukiHookXposedInit {
 
     override fun onInit() {
@@ -82,12 +80,12 @@ object HookEntry : IYukiHookXposedInit {
                 // 开启后你可以调用 [YukiHookLogger.saveToFile] 实时保存日志到文件或使用 [YukiHookLogger.contents] 获取实时日志文件
                 isRecord = false
                 // Customize the elements displayed by the debug log externally
-                // Only valid for logging and [XposedBridge.log]
+                // Only valid for logging through the Xposed framework
                 // The arrangement of log elements will be displayed in the order you set in [item]
                 // You can also leave [item] blank to not show all elements except the log content
                 // Available elements are: [TAG], [PRIORITY], [PACKAGE_NAME], [USER_ID]
                 // 自定义调试日志对外显示的元素
-                // 只对日志记录和 [XposedBridge.log] 生效
+                // 只对通过 Xposed 框架输出的日志生效
                 // 日志元素的排列将按照你在 [item] 中设置的顺序进行显示
                 // 你还可以留空 [item] 以不显示除日志内容外的全部元素
                 // 可用的元素有：[TAG]、[PRIORITY]、[PACKAGE_NAME]、[USER_ID]
@@ -134,7 +132,6 @@ object HookEntry : IYukiHookXposedInit {
         }
     }
 
-    @OptIn(LegacyResourcesHook::class)
     override fun onHook() {
         // Start your hook
         // Can be shortened to encase {}
@@ -160,29 +157,6 @@ object HookEntry : IYukiHookXposedInit {
                             instance<Activity>().apply { title = "$title [Active]" }
                         }
                     }
-                // Find Resources to hook
-                // Requires Hook Framework to support Resources Hook to succeed
-                // Resources Hook in Zygote only needs Hook Framework support, no need to enable this feature
-                // 得到需要 Hook 的 Resources
-                // 需要 Hook Framework 支持 Resources Hook(资源钩子) 才能成功
-                // 在 Zygote 中的 Resources Hook 只需要 Hook Framework 支持 - 无需启用此功能
-                resources().hook {
-                    // Inject the Resources to be hooked
-                    // 注入要 Hook 的 Resources
-                    injectResource {
-                        // Set the conditions
-                        // 设置条件
-                        conditions {
-                            name = "sym_def_app_icon"
-                            mipmap()
-                        }
-                        // Replace with the Resources of the current
-                        // Module App's Resources can be obfuscated with R8, results are not affected
-                        // 替换为当前模块的 Resources
-                        // 模块的 Resources 可以使用 R8 混淆 - 结果不受影响
-                        replaceToModuleResource(R.mipmap.ic_icon)
-                    }
-                }
             }
             // Load the app to be hooked
             // 装载需要 Hook 的 APP
@@ -365,58 +339,6 @@ object HookEntry : IYukiHookXposedInit {
                         replaceTo(any = "I am hook all methods last")
                     }
                 }
-                // Find Resources to hook
-                // Requires Hook Framework to support Resources Hook to succeed
-                // Resources Hook in Zygote only needs Hook Framework support, no need to enable this feature
-                // 得到需要 Hook 的 Resources
-                // 需要 Hook Framework 支持 Resources Hook(资源钩子) 且启用此功能才能成功
-                resources().hook {
-                    // Inject the Resources to be hooked
-                    // 注入要 Hook 的 Resources
-                    injectResource {
-                        // Set the conditions
-                        // 设置条件
-                        conditions {
-                            name = "activity_main"
-                            layout()
-                        }
-                        // Hook layout inflater
-                        // Hook 布局装载器
-                        injectAsLayout {
-                            // Replace the button text with the specified ID in this layout
-                            // 替换布局中指定 ID 的按钮文本
-                            findViewByIdentifier<Button>(name = "app_demo_button")?.text = "Touch Me!"
-                        }
-                    }
-                    // Inject the Resources to be hooked
-                    // 注入要 Hook 的 Resources
-                    injectResource {
-                        // Set the conditions
-                        // 设置条件
-                        conditions {
-                            name = "test_string"
-                            string()
-                        }
-                        // Replace with the specified Resources
-                        // 替换为指定的 Resources
-                        replaceTo(any = "I am hook to make you happy")
-                    }
-                    // Inject the Resources to be hooked
-                    // 注入要 Hook 的 Resources
-                    injectResource {
-                        // Set the conditions
-                        // 设置条件
-                        conditions {
-                            name = "ic_face_unhappy"
-                            mipmap()
-                        }
-                        // Replace with the Resources of the current
-                        // Module App's Resources can be obfuscated with R8, results are not affected
-                        // 替换为当前模块的 Resources
-                        // 模块的 Resources 可以使用 R8 混淆 - 结果不受影响
-                        replaceToModuleResource(R.mipmap.ic_face_happy)
-                    }
-                }
             }
         }
     }
@@ -433,23 +355,23 @@ object HookEntry : IYukiHookXposedInit {
         // 若你的 Hook 事件中存在需要兼容的原生 Xposed 功能 - 可在这里实现
         // 不要在这里处理任何 YukiHookAPI 的事件 - 请在 onHook 中完成
         YukiXposedEvent.events {
-            onInitZygote {
-                // Implement listening for the initZygote event
-                // 实现监听 initZygote 事件
+            onModuleLoaded {
+                // Implement listening for the onModuleLoaded event
+                // Use xposedInterface for native libxposed operations
+                // 实现监听 onModuleLoaded 事件
+                // 使用 xposedInterface 调用原生 libxposed API
             }
-            onHandleLoadPackage {
-                // Implement listener handleLoadPackage event
-                // Call native Xposed API methods
-                // 实现监听 handleLoadPackage 事件
-                // 可调用原生 Xposed API 方法
-                // XposedHelpers.findAndHookMethod("className", it.classLoader, "methodName", object : XC_MethodHook())
+            onPackageLoaded {
+                // Implement listening for the onPackageLoaded event
+                // 实现监听 onPackageLoaded 事件
             }
-            onHandleInitPackageResources {
-                // Implement the listener handleInitPackageResources event
-                // Call native Xposed API methods
-                // 实现监听 handleInitPackageResources 事件
-                // 可调用原生 Xposed API 方法
-                // it.res.setReplacement(0x7f060001, "replaceMent")
+            onPackageReady {
+                // Implement listening for the onPackageReady event
+                // 实现监听 onPackageReady 事件
+            }
+            onSystemServerStarting {
+                // Implement listening for the onSystemServerStarting event
+                // 实现监听 onSystemServerStarting 事件
             }
         }
     }

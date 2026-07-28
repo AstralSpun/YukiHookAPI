@@ -28,6 +28,7 @@ import com.highcapable.yukihookapi.hook.log.YLog
 import com.highcapable.yukihookapi.hook.xposed.bridge.YukiXposedModule
 import com.highcapable.yukihookapi.hook.xposed.bridge.resources.YukiResources
 import com.highcapable.yukihookapi.hook.xposed.bridge.type.HookEntryType
+import io.github.libxposed.api.XposedInterface
 
 /**
  * Routes calls to the Xposed module lifecycle implementation.
@@ -42,10 +43,12 @@ internal object YukiXposedModuleCaller {
 
     /**
      * Signals that the Xposed module started loading.
+     * @param base the framework interface attached to the module entry.
      * @param packageName the current Xposed module package name.
      * @param appFilePath the current Xposed module APK path.
      */
-    internal fun callOnStartLoadModule(packageName: String, appFilePath: String) = YukiXposedModule.onStartLoadModule(packageName, appFilePath)
+    internal fun callOnStartLoadModule(base: XposedInterface, packageName: String, appFilePath: String) =
+        YukiXposedModule.onStartLoadModule(base, packageName, appFilePath)
 
     /**
      * Signals that the Xposed module finished loading.

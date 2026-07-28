@@ -29,7 +29,7 @@ android {
 }
 
 dependencies {
-    compileOnly(libs.rovo89.xposed.api)
+    compileOnly(libs.libxposed.api)
     compileOnly(projects.yukihookapiStub)
     implementation(libs.hiddenapibypass)
     implementation(platform(libs.kavaref.bom))

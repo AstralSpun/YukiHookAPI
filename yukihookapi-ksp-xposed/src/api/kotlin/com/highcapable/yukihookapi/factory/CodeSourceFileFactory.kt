@@ -300,60 +300,63 @@ fun GenerateData.sources() = mapOf(
       
       import androidx.annotation.Keep
       import ${ExternalCallerName.YukiXposedEventCaller.first}
-      ${if (isUsingResourcesHook) "import de.robv.android.xposed.IXposedHookInitPackageResources" else ""}
-      import de.robv.android.xposed.IXposedHookLoadPackage
-      import de.robv.android.xposed.IXposedHookZygoteInit
-      ${if (isUsingResourcesHook) "import de.robv.android.xposed.callbacks.XC_InitPackageResources" else ""}
-      import de.robv.android.xposed.callbacks.XC_LoadPackage
+      import io.github.libxposed.api.XposedModule
+      import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
+      import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
+      import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+      import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
     """.trimIndent() + "\n\n" + createCommentContent("Xposed Init") + "\n" + """
       @Keep
-      class $xInitClassName : IXposedHookZygoteInit, IXposedHookLoadPackage${if (isUsingResourcesHook) ", IXposedHookInitPackageResources" else ""} {
+      class $xInitClassName : XposedModule() {
       
-          override fun initZygote(sparam: IXposedHookZygoteInit.StartupParam?) {
-              ${entryClassName}_Impl.callInitZygote(sparam)
-              ${ExternalCallerName.YukiXposedEventCaller.second}.callInitZygote(sparam)
+          override fun onModuleLoaded(param: ModuleLoadedParam) {
+              ${entryClassName}_Impl.callOnModuleLoaded(this, param)
+              ${ExternalCallerName.YukiXposedEventCaller.second}.callOnModuleLoaded(param)
           }
       
-          override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam?) {
-              ${entryClassName}_Impl.callHandleLoadPackage(lpparam)
-              ${ExternalCallerName.YukiXposedEventCaller.second}.callHandleLoadPackage(lpparam)
+          override fun onPackageLoaded(param: PackageLoadedParam) {
+              ${ExternalCallerName.YukiXposedEventCaller.second}.callOnPackageLoaded(param)
           }
-    """.trimIndent() +
-        (if (isUsingResourcesHook)
-            "\n" + """
-              
-                  override fun handleInitPackageResources(resparam: XC_InitPackageResources.InitPackageResourcesParam?) {
-                      ${entryClassName}_Impl.callHandleInitPackageResources(resparam)
-                      ${ExternalCallerName.YukiXposedEventCaller.second}.callHandleInitPackageResources(resparam)
-                  }
-              }
-            """.trimIndent()
-        else "\n}"),
+
+          override fun onPackageReady(param: PackageReadyParam) {
+              ${entryClassName}_Impl.callOnPackageReady(param)
+              ${ExternalCallerName.YukiXposedEventCaller.second}.callOnPackageReady(param)
+          }
+
+          override fun onSystemServerStarting(param: SystemServerStartingParam) {
+              ${entryClassName}_Impl.callOnSystemServerStarting(param)
+              ${ExternalCallerName.YukiXposedEventCaller.second}.callOnSystemServerStarting(param)
+          }
+      }
+    """.trimIndent(),
     ClassName.XposedInit_Impl to """
       @file:Suppress("ClassName", "INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
       
       package ${SymbolConverterTool.process(entryPackageName)}
       
       import ${ExternalCallerName.YukiXposedModuleCaller.first}
-      import ${ExternalCallerName.YukiXposedResourcesCaller.first}
       import com.highcapable.yukihookapi.hook.xposed.bridge.type.HookEntryType
-      import de.robv.android.xposed.IXposedHookZygoteInit
-      import de.robv.android.xposed.XposedBridge
-      import de.robv.android.xposed.callbacks.XC_InitPackageResources
-      import de.robv.android.xposed.callbacks.XC_LoadPackage
+      import io.github.libxposed.api.XposedInterface
+      import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
+      import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+      import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
     """.trimIndent() + "\n\n" + createCommentContent("Xposed Init Impl") + "\n" + """
       object ${entryClassName}_Impl {
       
           private const val MODULE_PACKAGE_NAME = "${customMPackageName.ifBlank { modulePackageName }}"
-          private var isZygoteCalled = false
+          private var isModuleLoaded = false
+          private var processName = ""
           private val hookEntry = ${if (isEntryClassKindOfObject) entryClassName else "$entryClassName()"}
       
-          private fun callOnXposedModuleLoaded(
-              isZygoteLoaded: Boolean = false,
-              lpparam: XC_LoadPackage.LoadPackageParam? = null,
-              resparam: XC_InitPackageResources.InitPackageResourcesParam? = null
-          ) {
-              if (isZygoteCalled.not()) runCatching {
+          fun callOnModuleLoaded(base: XposedInterface, param: ModuleLoadedParam) {
+              if (isModuleLoaded) return
+              runCatching {
+                  processName = param.processName
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnStartLoadModule(
+                      base = base,
+                      packageName = MODULE_PACKAGE_NAME,
+                      appFilePath = base.moduleApplicationInfo.sourceDir
+                  )
                   hookEntry.onXposedEvent()
                   hookEntry.onInit()
                   if (${ExternalCallerName.YukiXposedModuleCaller.second}.isXposedCallbackSetUp) {
@@ -362,37 +365,38 @@ fun GenerateData.sources() = mapOf(
                   }
                   hookEntry.onHook()
                   ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnFinishLoadModule()
-              }.onFailure { ${ExternalCallerName.YukiXposedModuleCaller.second}.callLogError("YukiHookAPI try to load hook entry class failed", it) }
+                  isModuleLoaded = true
+              }.onFailure {
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callLogError("An exception occurred when YukiHookAPI loading Xposed Module", it)
+              }
+              if (isModuleLoaded.not()) return
               ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnPackageLoaded(
-                  type = when {
-                      isZygoteLoaded -> HookEntryType.ZYGOTE
-                      lpparam != null -> HookEntryType.PACKAGE
-                      resparam != null -> HookEntryType.RESOURCES
-                      else -> HookEntryType.ZYGOTE
-                  },
-                  packageName = lpparam?.packageName ?: resparam?.packageName,
-                  processName = lpparam?.processName,
-                  appClassLoader = lpparam?.classLoader ?: runCatching { XposedBridge.BOOTCLASSLOADER }.getOrNull(),
-                  appInfo = lpparam?.appInfo,
-                  appResources = ${ExternalCallerName.YukiXposedResourcesCaller.second}.createYukiResourcesFromXResources(resparam?.res)
+                  type = HookEntryType.ZYGOTE,
+                  packageName = null,
+                  processName = processName,
+                  appClassLoader = ClassLoader.getSystemClassLoader()
               )
           }
       
-          fun callInitZygote(sparam: IXposedHookZygoteInit.StartupParam?) {
-              if (sparam == null) return
-              runCatching {
-                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnStartLoadModule(MODULE_PACKAGE_NAME, sparam.modulePath)
-                  callOnXposedModuleLoaded(isZygoteLoaded = true)
-                  isZygoteCalled = true
-              }.onFailure { ${ExternalCallerName.YukiXposedModuleCaller.second}.callLogError("An exception occurred when YukiHookAPI loading Xposed Module", it) }
+          fun callOnPackageReady(param: PackageReadyParam) {
+              if (isModuleLoaded.not()) return
+              ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnPackageLoaded(
+                  type = HookEntryType.PACKAGE,
+                  packageName = param.packageName,
+                  processName = processName,
+                  appClassLoader = param.classLoader,
+                  appInfo = param.applicationInfo
+              )
           }
       
-          fun callHandleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam?) {
-              if (lpparam != null && isZygoteCalled) callOnXposedModuleLoaded(lpparam = lpparam)
-          }
-      
-          fun callHandleInitPackageResources(resparam: XC_InitPackageResources.InitPackageResourcesParam?) {
-              if (resparam != null && isZygoteCalled) callOnXposedModuleLoaded(resparam = resparam)
+          fun callOnSystemServerStarting(param: SystemServerStartingParam) {
+              if (isModuleLoaded.not()) return
+              ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnPackageLoaded(
+                  type = HookEntryType.PACKAGE,
+                  packageName = "android",
+                  processName = processName,
+                  appClassLoader = param.classLoader
+              )
           }
       }
     """.trimIndent()

@@ -24,53 +24,60 @@
 
 package com.highcapable.yukihookapi.hook.xposed.bridge.event
 
-import de.robv.android.xposed.IXposedHookZygoteInit.StartupParam
-import de.robv.android.xposed.callbacks.XC_InitPackageResources.InitPackageResourcesParam
-import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
+import com.highcapable.yukihookapi.hook.core.api.compat.HookApiCategoryHelper
+import io.github.libxposed.api.XposedInterface
+import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
+import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
+import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
+import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
 
 /**
- * Registers listeners for native Xposed API loading events.
+ * Registers listeners for native libxposed module lifecycle events.
  */
 object YukiXposedEvent {
 
-    /** Callback invoked when `initZygote` starts. */
-    internal var initZygoteCallback: ((StartupParam) -> Unit)? = null
-
-    /** Callback invoked when `handleLoadPackage` starts. */
-    internal var handleLoadPackageCallback: ((LoadPackageParam) -> Unit)? = null
-
-    /** Callback invoked when `handleInitPackageResources` starts. */
-    internal var handleInitPackageResourcesCallback: ((InitPackageResourcesParam) -> Unit)? = null
-
     /**
-     * Configures [YukiXposedEvent].
-     * @param initiate the configuration block.
+     * Gets the libxposed interface attached to the generated module entry.
+     *
+     * This is available after the framework invokes `onModuleLoaded`.
+     * @return [XposedInterface]
      */
+    val xposedInterface get() = HookApiCategoryHelper.base
+
+    /** Callback invoked when the module is loaded into a process. */
+    internal var moduleLoadedCallback: ((ModuleLoadedParam) -> Unit)? = null
+
+    /** Callback invoked when a package's default class loader is available. */
+    internal var packageLoadedCallback: ((PackageLoadedParam) -> Unit)? = null
+
+    /** Callback invoked when a package's final class loader is ready. */
+    internal var packageReadyCallback: ((PackageReadyParam) -> Unit)? = null
+
+    /** Callback invoked when system_server begins starting services. */
+    internal var systemServerStartingCallback: ((SystemServerStartingParam) -> Unit)? = null
+
+    /** Configures [YukiXposedEvent]. */
     inline fun events(initiate: YukiXposedEvent.() -> Unit) {
         YukiXposedEvent.apply(initiate)
     }
 
-    /**
-     * Sets the `initZygote` event listener.
-     * @param result the event callback.
-     */
-    fun onInitZygote(result: (StartupParam) -> Unit) {
-        initZygoteCallback = result
+    /** Sets the `onModuleLoaded` event listener. */
+    fun onModuleLoaded(result: (ModuleLoadedParam) -> Unit) {
+        moduleLoadedCallback = result
     }
 
-    /**
-     * Sets the `handleLoadPackage` event listener.
-     * @param result the event callback.
-     */
-    fun onHandleLoadPackage(result: (LoadPackageParam) -> Unit) {
-        handleLoadPackageCallback = result
+    /** Sets the `onPackageLoaded` event listener. */
+    fun onPackageLoaded(result: (PackageLoadedParam) -> Unit) {
+        packageLoadedCallback = result
     }
 
-    /**
-     * Sets the `handleInitPackageResources` event listener.
-     * @param result the event callback.
-     */
-    fun onHandleInitPackageResources(result: (InitPackageResourcesParam) -> Unit) {
-        handleInitPackageResourcesCallback = result
+    /** Sets the `onPackageReady` event listener. */
+    fun onPackageReady(result: (PackageReadyParam) -> Unit) {
+        packageReadyCallback = result
+    }
+
+    /** Sets the `onSystemServerStarting` event listener. */
+    fun onSystemServerStarting(result: (SystemServerStartingParam) -> Unit) {
+        systemServerStartingCallback = result
     }
 }

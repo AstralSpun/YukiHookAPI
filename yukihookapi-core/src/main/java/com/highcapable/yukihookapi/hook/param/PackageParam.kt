@@ -38,7 +38,6 @@ import com.highcapable.kavaref.resolver.ConstructorResolver
 import com.highcapable.kavaref.resolver.MethodResolver
 import com.highcapable.kavaref.resolver.base.MemberResolver
 import com.highcapable.yukihookapi.YukiHookAPI
-import com.highcapable.yukihookapi.annotation.xposed.InjectYukiHookWithXposed
 import com.highcapable.yukihookapi.hook.bean.HookClass
 import com.highcapable.yukihookapi.hook.bean.HookResources
 import com.highcapable.yukihookapi.hook.core.YukiMemberHookCreator
@@ -996,7 +995,7 @@ open class PackageParam internal constructor(internal var wrapper: PackageParamW
     /**
      * Hooks the Resources of the APP.
      *
-     * - This feature is no longer enabled by default. Set [InjectYukiHookWithXposed.isUsingResourcesHook] manually to enable it.
+     * - This compatibility API does not apply replacements on libxposed API 102.
      * @param initiate the Hook block.
      */
     @LegacyResourcesHook

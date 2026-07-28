@@ -36,15 +36,15 @@ import com.highcapable.yukihookapi.hook.xposed.bridge.delegate.XSharedPreference
 import com.highcapable.yukihookapi.hook.xposed.parasitic.AppParasitics
 import com.highcapable.yukihookapi.hook.xposed.prefs.data.PrefsData
 import com.highcapable.yukihookapi.hook.xposed.prefs.ui.ModulePreferenceFragment
-import de.robv.android.xposed.XSharedPreferences
 import java.io.File
 
 /**
- * [YukiHookAPI] extended storage bridge implementation for [SharedPreferences] and [XSharedPreferences].
+ * [YukiHookAPI] extended storage bridge implementation for local and libxposed remote [SharedPreferences].
  *
  * Selects the storage object intelligently for different environments.
  *
- * - Shared data storage between the module and host is experimental. It has only been tested under LSPosed. EdXposed should theoretically work but is no longer recommended.
+ * - Hook processes read framework-owned remote groups. Module-local preferences are not synchronized automatically; module apps must write the
+ * same group through libxposed service.
  *
  * For using [PreferenceFragmentCompat] in the module environment, [YukiHookAPI] provides [ModulePreferenceFragment] with the same functionality.
  * @param context the context instance, null by default.
@@ -125,8 +125,8 @@ class YukiHookPrefsBridge private constructor(private var context: Context? = nu
     }
 
     /**
-     * Gets the current [XSharedPreferences] object.
-     * @return [XSharedPreferences]
+     * Gets the current remote [SharedPreferences] object.
+     * @return [SharedPreferences]
      */
     private val currentXsp
         get() = checkApi().let {
@@ -134,12 +134,9 @@ class YukiHookPrefsBridge private constructor(private var context: Context? = nu
                 (xPrefs[currentPrefsName]?.instance ?: XSharedPreferencesDelegate.from(YukiXposedModule.modulePackageName, currentPrefsName)
                     .also {
                         xPrefs[currentPrefsName] = it
-                    }.instance).apply {
-                    makeWorldReadable()
-                    reload()
-                }
+                    }.instance)
             }.onFailure { YLog.innerE(it.message ?: "Operating system not supported", it) }.getOrNull()
-                ?: error("Cannot load the XSharedPreferences, maybe is your Hook Framework not support it")
+                ?: error("Cannot load remote preferences, maybe your Hook Framework does not support them")
         }
 
     /**
@@ -164,7 +161,7 @@ class YukiHookPrefsBridge private constructor(private var context: Context? = nu
         }
 
     /**
-     * Whether [XSharedPreferences] is readable.
+     * Whether remote preferences are readable.
      *
      * - This API is deprecated and will be removed in a future version.
      *
@@ -188,14 +185,14 @@ class YukiHookPrefsBridge private constructor(private var context: Context? = nu
     /**
      * Gets the availability state of the current [YukiHookPrefsBridge].
      *
-     * - In the (Xposed) host environment, returns the availability state of [XSharedPreferences] (readable).
+     * - In the (Xposed) host environment, returns whether libxposed remote preferences are available.
      *
-     * - In the module environment, returns whether New XSharedPreferences mode is active (readable and writable).
+     * - In the module environment, reports only local storage availability and does not verify the corresponding libxposed remote group.
      * @return [Boolean]
      */
     val isPreferencesAvailable
         get() = if (isXposedEnvironment)
-            (runCatching { currentXsp.let { it.file.exists() && it.file.canRead() } }.getOrNull() ?: false)
+            (runCatching { currentXsp.all; true }.getOrNull() ?: false)
         else runCatching {
             // Performs one load.
             currentSp.edit()

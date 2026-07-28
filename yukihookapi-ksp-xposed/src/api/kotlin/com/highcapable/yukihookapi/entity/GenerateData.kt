@@ -27,10 +27,10 @@ package com.highcapable.yukihookapi.entity
  * @param modulePackageName the module package name (namespace).
  * @param customMPackageName the custom module package name.
  * @param entryClassName the entry class name.
- * @param xInitClassName the `xposed_init` entry class name.
+ * @param xInitClassName the libxposed Java entry class name.
  * @param isEntryClassKindOfObject whether the entry class is an `object` singleton.
  * @param isUsingXposedModuleStatus whether Xposed module status detection is enabled.
- * @param isUsingResourcesHook whether Resources Hook is enabled.
+ * @param isUsingResourcesHook whether the legacy Resources Hook option was requested.
  */
 data class GenerateData(
     var entryPackageName: String = "",

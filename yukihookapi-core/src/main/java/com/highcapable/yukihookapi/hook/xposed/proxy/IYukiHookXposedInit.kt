@@ -73,14 +73,17 @@ interface IYukiHookXposedInit {
      * Implement native Xposed compatibility here when required by a Hook.
      *
      * Use [YukiXposedEvent] to register event callbacks.
+     * Use [YukiXposedEvent.xposedInterface] for native libxposed operations.
      *
      * Available events:
      *
-     * [YukiXposedEvent.onInitZygote]
+     * [YukiXposedEvent.onModuleLoaded]
      *
-     * [YukiXposedEvent.onHandleLoadPackage]
+     * [YukiXposedEvent.onPackageLoaded]
      *
-     * [YukiXposedEvent.onHandleInitPackageResources]
+     * [YukiXposedEvent.onPackageReady]
+     *
+     * [YukiXposedEvent.onSystemServerStarting]
      *
      * - Use this callback only for native Xposed APIs. Do not operate [YukiHookAPI] here.
      */

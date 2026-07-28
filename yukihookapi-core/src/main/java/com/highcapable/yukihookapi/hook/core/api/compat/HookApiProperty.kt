@@ -23,12 +23,9 @@
 
 package com.highcapable.yukihookapi.hook.core.api.compat
 
-import com.highcapable.kavaref.KavaRef.Companion.resolve
-import com.highcapable.kavaref.condition.type.Modifiers
 import com.highcapable.kavaref.extension.hasClass
 import com.highcapable.yukihookapi.hook.core.api.compat.type.ExecutorType
 import com.highcapable.yukihookapi.hook.xposed.parasitic.AppParasitics
-import de.robv.android.xposed.XposedBridge
 
 /**
  * Resolves properties of the active Hook API.
@@ -62,18 +59,10 @@ internal object HookApiProperty {
      */
     internal val name
         get() = when (HookApiCategoryHelper.currentCategory) {
-            HookApiCategory.ROVO89_XPOSED -> when {
+            HookApiCategory.LIBXPOSED -> when {
                 AppParasitics.currentApplication?.classLoader?.hasClass(EXPOSED_BRIDGE_CLASS_NAME) == true -> TAICHI_XPOSED_NAME
                 AppParasitics.currentApplication?.classLoader?.hasClass(BUG_LOAD_CLASS_NAME) == true -> BUG_XPOSED_NAME
-                else -> runCatching {
-                    XposedBridge::class.resolve()
-                        .optional(silent = true)
-                        .firstFieldOrNull {
-                            name = "TAG"
-                            modifiers(Modifiers.STATIC)
-                        }?.get<String>()?.takeIf { it.isNotBlank() }
-                        ?.replace("Bridge", "")?.replace("-", "")?.trim() ?: "unknown"
-                }.getOrNull() ?: "invalid"
+                else -> runCatching { HookApiCategoryHelper.base.frameworkName }.getOrNull()?.takeIf { it.isNotBlank() } ?: "invalid"
             }
             HookApiCategory.UNKNOWN -> "unknown"
         }
@@ -104,7 +93,7 @@ internal object HookApiProperty {
      */
     internal val apiLevel
         get() = when (HookApiCategoryHelper.currentCategory) {
-            HookApiCategory.ROVO89_XPOSED -> runCatching { XposedBridge.getXposedVersion() }.getOrNull() ?: -1
+            HookApiCategory.LIBXPOSED -> runCatching { HookApiCategoryHelper.base.apiVersion }.getOrNull() ?: -1
             HookApiCategory.UNKNOWN -> -1
         }
 
@@ -114,7 +103,7 @@ internal object HookApiProperty {
      */
     internal val versionName
         get() = when (HookApiCategoryHelper.currentCategory) {
-            HookApiCategory.ROVO89_XPOSED -> "unsupported"
+            HookApiCategory.LIBXPOSED -> runCatching { HookApiCategoryHelper.base.frameworkVersion }.getOrNull() ?: "unknown"
             HookApiCategory.UNKNOWN -> "unknown"
         }
 
@@ -124,7 +113,7 @@ internal object HookApiProperty {
      */
     internal val versionCode
         get() = when (HookApiCategoryHelper.currentCategory) {
-            HookApiCategory.ROVO89_XPOSED -> 0
+            HookApiCategory.LIBXPOSED -> runCatching { HookApiCategoryHelper.base.frameworkVersionCode.toInt() }.getOrNull() ?: -1
             HookApiCategory.UNKNOWN -> -1
         }
 }

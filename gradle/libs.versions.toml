@@ -4,7 +4,7 @@ kotlin = "2.4.0"
 ksp = "2.3.9"
 dokka = "2.2.0"
 maven-publish = "0.37.0"
-rovo89-xposed-api = "82"
+libxposed-api = "102.0.0"
 hiddenapibypass = "6.1"
 auto-service-annotations = "1.1.1"
 auto-service-ksp = "1.2.0"
@@ -40,7 +40,7 @@ hikage = { id = "com.highcapable.hikage", version.ref = "hikage-plugin" }
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish" }
 
 [libraries]
-rovo89-xposed-api = { module = "de.robv.android.xposed:api", version.ref = "rovo89-xposed-api" }
+libxposed-api = { module = "io.github.libxposed:api", version.ref = "libxposed-api" }
 hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenapibypass" }
 symbol-processing-api = { module = "com.google.devtools.ksp:symbol-processing-api", version.ref = "ksp" }
 auto-service-annotations = { module = "com.google.auto.service:auto-service-annotations", version.ref = "auto-service-annotations" }

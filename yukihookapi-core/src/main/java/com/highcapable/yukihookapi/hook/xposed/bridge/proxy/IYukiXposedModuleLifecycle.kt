@@ -24,6 +24,7 @@ package com.highcapable.yukihookapi.hook.xposed.bridge.proxy
 import android.content.pm.ApplicationInfo
 import com.highcapable.yukihookapi.hook.xposed.bridge.resources.YukiResources
 import com.highcapable.yukihookapi.hook.xposed.bridge.type.HookEntryType
+import io.github.libxposed.api.XposedInterface
 
 /**
  * Defines the Xposed module loading lifecycle.
@@ -32,10 +33,11 @@ internal interface IYukiXposedModuleLifecycle {
 
     /**
      * Called when the Xposed module starts loading.
+     * @param base the framework interface attached to the module entry.
      * @param packageName the current Xposed module package name.
      * @param appFilePath the current Xposed module APK path.
      */
-    fun onStartLoadModule(packageName: String, appFilePath: String)
+    fun onStartLoadModule(base: XposedInterface, packageName: String, appFilePath: String)
 
     /** Called when the Xposed module finishes loading. */
     fun onFinishLoadModule()

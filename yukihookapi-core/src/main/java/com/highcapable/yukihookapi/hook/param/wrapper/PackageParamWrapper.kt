@@ -27,7 +27,6 @@ import android.content.pm.ApplicationInfo
 import com.highcapable.yukihookapi.hook.param.PackageParam
 import com.highcapable.yukihookapi.hook.xposed.bridge.resources.YukiResources
 import com.highcapable.yukihookapi.hook.xposed.bridge.type.HookEntryType
-import dalvik.system.PathClassLoader
 
 /**
  * Wraps [PackageParam] state for the current Hook entry.
@@ -52,16 +51,6 @@ internal class PackageParamWrapper internal constructor(
      * @return [String]
      */
     internal val wrapperNameId get() = if (type == HookEntryType.ZYGOTE) "android-zygote" else packageName
-
-    /**
-     * Gets whether the current Hook process uses the expected [ClassLoader].
-     *
-     * This prevents [ClassLoader] mismatches while hooking the system framework or system apps.
-     *
-     * When [type] is not [HookEntryType.ZYGOTE], [appClassLoader] must be a [PathClassLoader].
-     * @return [Boolean] whether the process configuration is valid.
-     */
-    internal val isCorrectProcess get() = type == HookEntryType.ZYGOTE || (type != HookEntryType.ZYGOTE && appClassLoader is PathClassLoader)
 
     override fun toString() =
         "[type] $type [packageName] $packageName [processName] $processName [appClassLoader] $appClassLoader [appInfo] $appInfo [appResources] $appResources"

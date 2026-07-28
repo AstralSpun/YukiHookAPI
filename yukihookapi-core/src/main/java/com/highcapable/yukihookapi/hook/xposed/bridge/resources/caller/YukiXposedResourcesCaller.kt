@@ -23,18 +23,18 @@
 
 package com.highcapable.yukihookapi.hook.xposed.bridge.resources.caller
 
-import android.content.res.XResources
+import android.content.res.Resources
 import com.highcapable.yukihookapi.hook.xposed.bridge.resources.YukiResources
 
 /**
- * Provides internal calls for Xposed module Resources Hook operations.
+ * Provides internal calls for module resource operations.
  */
 internal object YukiXposedResourcesCaller {
 
     /**
-     * Creates [YukiResources] from [XResources].
-     * @param xResources the nullable [XResources] instance.
+     * Creates [YukiResources] from [Resources].
+     * @param resources the nullable [Resources] instance.
      * @return [YukiResources] or null.
      */
-    internal fun createYukiResourcesFromXResources(xResources: XResources?) = xResources?.let { YukiResources.wrapper(it) }
+    internal fun createYukiResources(resources: Resources?) = resources?.let { YukiResources.wrapper(it) }
 }

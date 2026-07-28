@@ -23,22 +23,21 @@ package com.highcapable.yukihookapi.annotation.xposed
 
 import com.highcapable.yukihookapi.YukiHookAPI
 import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
-import de.robv.android.xposed.IXposedHookInitPackageResources
 
 /**
  * Marks the [YukiHookAPI] Xposed entry class for code generation.
  *
  * - The project source directory defaults to `src/main` and can be customized through [sourcePath].
  *
- * - The processor creates `xposed_init` under `[sourcePath]/assets`.
+ * - The processor creates `java_init.list` and `module.prop` under `[sourcePath]/resources/META-INF/xposed`.
  *
- * The generated `xposed_init` entry uses the fully qualified annotated class name plus `_YukiHookXposedInit`, or [entryClassName].
+ * The generated libxposed entry uses the fully qualified annotated class name plus `_YukiHookXposedInit`, or [entryClassName].
  *
  * - [modulePackageName] overrides the detected module package. Otherwise AndroidManifest.xml and Gradle metadata are analyzed.
  *
  * - A custom [modulePackageName] produces a compile-time warning so the value can be verified.
  *
- * - Do not modify `[sourcePath]/assets/xposed_init` manually. Invalid content may prevent the module from loading.
+ * - Do not modify the generated `java_init.list` manually. Invalid content may prevent the module from loading.
  *
  * - The annotated class must implement [IYukiHookXposedInit] and [IYukiHookXposedInit.onHook].
  *
@@ -48,8 +47,9 @@ import de.robv.android.xposed.IXposedHookInitPackageResources
  * @param sourcePath the project-relative source path, defaults to `src/main`.
  * @param modulePackageName the module package name, or an empty string for automatic detection.
  * @param entryClassName the generated Xposed entry class name, or an empty string to use `AnnotatedClass_YukiHookXposedInit`.
- * @param isUsingXposedModuleStatus whether automatic Xposed module status detection is enabled, defaults to true.
- * @param isUsingResourcesHook whether Resources Hook and [IXposedHookInitPackageResources] generation are enabled, defaults to false.
+ * @param isUsingXposedModuleStatus whether self-hook based Xposed module status detection is enabled, defaults to true. Under libxposed, the module
+ * package must be included in scope; module apps outside scope should query libxposed service instead.
+ * @param isUsingResourcesHook retained for source compatibility. Legacy resource replacement and layout hooks are unavailable in libxposed API 102.
  */
 @Target(AnnotationTarget.CLASS)
 annotation class InjectYukiHookWithXposed(

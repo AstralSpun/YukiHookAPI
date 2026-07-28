@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">YukiHook Module</string>
+    <string name="module_description">YukiHookAPI Xposed Module Test</string>
 </resources>
