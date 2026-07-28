@@ -1,0 +1,4 @@
+jdk:
+  - openjdk17
+install:
+  - ./gradlew clean -Pgroup=$GROUP -Pversion=$VERSION -PRELEASE_SIGNING_ENABLED=false -xtest -xlint assemble publishToMavenLocal

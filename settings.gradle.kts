@@ -19,6 +19,7 @@ dependencyResolutionManagement {
 plugins {
     id("com.highcapable.gropify") version "1.0.2"
 }
+rootProject.name = "YukiHookAPI"
 gropify {
     global {
         android {
@@ -30,9 +31,11 @@ gropify {
     projects(":samples") { common { isEnabled = false } }
     projects(":samples:demo-app", ":samples:demo-module", ":yukihookapi-stub") { android { isEnabled = false } }
     projects(":yukihookapi-core", ":yukihookapi-dexkit", ":yukihookapi-ksp-xposed") {
-        sourceCode { className = rootProject.name }
+        sourceCode {
+            generateDirPath = ".gradle/generated/gropify"
+            className = rootProject.name
+        }
     }
 }
-rootProject.name = "YukiHookAPI"
 include(":samples:demo-app", ":samples:demo-module")
 include(":yukihookapi-core", ":yukihookapi-dexkit", ":yukihookapi-ksp-xposed", ":yukihookapi-stub")
