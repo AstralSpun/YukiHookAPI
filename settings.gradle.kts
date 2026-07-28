@@ -29,10 +29,10 @@ gropify {
     rootProject { common { isEnabled = false } }
     projects(":samples") { common { isEnabled = false } }
     projects(":samples:demo-app", ":samples:demo-module", ":yukihookapi-stub") { android { isEnabled = false } }
-    projects(":yukihookapi-core", ":yukihookapi-ksp-xposed") {
+    projects(":yukihookapi-core", ":yukihookapi-dexkit", ":yukihookapi-ksp-xposed") {
         sourceCode { className = rootProject.name }
     }
 }
 rootProject.name = "YukiHookAPI"
 include(":samples:demo-app", ":samples:demo-module")
-include(":yukihookapi-core", ":yukihookapi-ksp-xposed", ":yukihookapi-stub")
+include(":yukihookapi-core", ":yukihookapi-dexkit", ":yukihookapi-ksp-xposed", ":yukihookapi-stub")

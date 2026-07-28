@@ -5,6 +5,7 @@ ksp = "2.3.9"
 dokka = "2.2.0"
 maven-publish = "0.37.0"
 libxposed-api = "102.0.0"
+dexkit = "2.2.0"
 hiddenapibypass = "6.1"
 auto-service-annotations = "1.1.1"
 auto-service-ksp = "1.2.0"
@@ -42,6 +43,7 @@ maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publ
 [libraries]
 libxposed-api = { module = "io.github.libxposed:api", version.ref = "libxposed-api" }
 libxposed-service = { module = "io.github.libxposed:service", version.ref = "libxposed-api" }
+dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
 hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenapibypass" }
 symbol-processing-api = { module = "com.google.devtools.ksp:symbol-processing-api", version.ref = "ksp" }
 auto-service-annotations = { module = "com.google.auto.service:auto-service-annotations", version.ref = "auto-service-annotations" }
