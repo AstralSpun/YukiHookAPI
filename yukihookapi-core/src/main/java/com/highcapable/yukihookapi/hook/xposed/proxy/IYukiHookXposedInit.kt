@@ -24,6 +24,7 @@
 
 package com.highcapable.yukihookapi.hook.xposed.proxy
 
+import android.os.Bundle
 import com.highcapable.yukihookapi.YukiHookAPI
 import com.highcapable.yukihookapi.annotation.xposed.InjectYukiHookWithXposed
 import com.highcapable.yukihookapi.hook.factory.configs
@@ -66,6 +67,28 @@ interface IYukiHookXposedInit {
      * Call [YukiHookAPI.encase] or [encase] to start Hook operations.
      */
     fun onHook()
+
+    /**
+     * Called in the old module generation before an accepted hot reload begins.
+     *
+     * Use this callback to stop module-owned threads, unregister callbacks and native hooks, and release references that
+     * cannot be managed by [YukiHookAPI]. Throwing an exception rejects the hot reload request.
+     *
+     * Yuki Hooks created in replayable package callbacks are captured and replaced automatically. Runtime Yuki Hooks created
+     * later from app lifecycle, receiver, or class-load callbacks and Activity Proxy integration reject hot reload while active.
+     * @param extras class-loader-neutral data supplied by the manual hot reload request, or null for an automatic request.
+     */
+    fun onHotReloading(extras: Bundle?) {}
+
+    /**
+     * Called in the new module generation after [YukiHookAPI] has rebuilt and committed its hooks.
+     *
+     * Use this callback to restore module-owned threads, callbacks, native hooks, and other non-Hook resources.
+     * Throwing marks the request as failed and removes Hooks from both generations; clean up any partially restored
+     * module-owned resources before allowing an exception to escape.
+     * @param extras class-loader-neutral data supplied by the manual hot reload request, or null for an automatic request.
+     */
+    fun onHotReloaded(extras: Bundle?) {}
 
     /**
      * Listens for native Xposed loading events.

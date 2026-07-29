@@ -43,7 +43,7 @@ import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
  *
  * - Enables [YukiHookDataChannel] communication between the module and host.
  *
- * - Connects to available libxposed services for status, scope, and remote preferences.
+ * - Connects to available libxposed services for status, scope, remote preferences, and manual hot reload requests.
  * The process-wide libxposed service listener is owned by [YukiHookAPI]; do not replace it by registering another listener directly.
  *
  * - Exposes [YukiHookAPI.Status.isTaiChiModuleActive] for TaiChi and Wuji activation checks.

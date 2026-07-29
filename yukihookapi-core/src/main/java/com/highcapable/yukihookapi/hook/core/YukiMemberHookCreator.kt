@@ -32,6 +32,7 @@ import com.highcapable.yukihookapi.YukiHookAPI
 import com.highcapable.yukihookapi.hook.bean.HookClass
 import com.highcapable.yukihookapi.hook.core.annotation.LegacyHookApi
 import com.highcapable.yukihookapi.hook.core.api.compat.HookApiCategoryHelper
+import com.highcapable.yukihookapi.hook.core.api.compat.HookCompatHelper
 import com.highcapable.yukihookapi.hook.core.api.helper.YukiHookHelper
 import com.highcapable.yukihookapi.hook.core.api.priority.YukiHookPriority
 import com.highcapable.yukihookapi.hook.core.api.proxy.YukiMemberHook
@@ -202,22 +203,49 @@ class YukiMemberHookCreator internal constructor(private val packageParam: Packa
             if (hookClass.isPlaceholder) YLog.innerW("Hook Members is empty, hook aborted")
             else YLog.innerW("Hook Members is empty in [${hookClass.name}], hook aborted")
         }
-        else -> Result().await {
-            when {
-                isDisableCreatorRunHook.not() && (hookClass.instance != null || hookClass.isPlaceholder) ->
-                    runCatching {
-                        it.onPrepareHook?.invoke()
-                        preHookMembers.forEach { (_, m) -> m.hook() }
-                    }.onFailure {
-                        if (onHookClassNotFoundFailureCallback == null)
-                            YLog.innerE("Hook initialization failed because got an exception", e = it)
-                        else onHookClassNotFoundFailureCallback?.invoke(it)
+        else -> Result().also {
+            if (isDisableCreatorRunHook.not() && (hookClass.instance != null || hookClass.isPlaceholder))
+                preHookMembers.forEach { (_, member) -> member.reserveHookIds() }
+            if (HookCompatHelper.isHotReloadCapturing)
+                HookCompatHelper.deferHotReloadInstallation { conductHook(it) }
+            else {
+                HookCompatHelper.beginHookInstallation()
+                runCatching {
+                    it.await { result ->
+                        try {
+                            conductHook(result)
+                        } finally {
+                            HookCompatHelper.finishHookInstallation()
+                        }
                     }
-                isDisableCreatorRunHook.not() && hookClass.instance == null ->
-                    if (onHookClassNotFoundFailureCallback == null)
-                        YLog.innerE("HookClass [${hookClass.name}] not found", e = hookClass.throwable)
-                    else onHookClassNotFoundFailureCallback?.invoke(hookClass.throwable ?: Throwable("[${hookClass.name}] not found"))
+                }.onFailure {
+                    HookCompatHelper.finishHookInstallation()
+                    throw it
+                }
             }
+        }
+    }
+
+    /** Performs legacy class-based Hook installation. */
+    private fun conductHook(result: Result) {
+        when {
+            isDisableCreatorRunHook.not() && (hookClass.instance != null || hookClass.isPlaceholder) ->
+                runCatching {
+                    result.onPrepareHook?.invoke()
+                    preHookMembers.forEach { (_, member) -> member.hook() }
+                }.onFailure {
+                    if (onHookClassNotFoundFailureCallback == null)
+                        YLog.innerE("Hook initialization failed because got an exception", e = it)
+                    else onHookClassNotFoundFailureCallback?.invoke(it)
+                    if (HookCompatHelper.isHotReloadCapturing && onHookClassNotFoundFailureCallback == null) throw it
+                }
+            isDisableCreatorRunHook.not() && hookClass.instance == null ->
+                (hookClass.throwable ?: Throwable("[${hookClass.name}] not found")).also { throwable ->
+                    if (onHookClassNotFoundFailureCallback == null)
+                        YLog.innerE("HookClass [${hookClass.name}] not found", e = throwable)
+                    else onHookClassNotFoundFailureCallback?.invoke(throwable)
+                    if (HookCompatHelper.isHotReloadCapturing && onHookClassNotFoundFailureCallback == null) throw throwable
+                }
         }
     }
 
@@ -294,6 +322,9 @@ class YukiMemberHookCreator internal constructor(private val packageParam: Packa
 
         /** Currently hooked [Method] and [Constructor] instances. */
         private val hookedMembers = mutableSetOf<YukiMemberHook.HookedMember>()
+
+        /** Hook IDs reserved before asynchronous legacy Hook installation starts. */
+        private val reservedHookIds = mutableMapOf<Member, String>()
 
         /** Current [Method] and [Constructor] instances to hook. */
         internal val members = mutableSetOf<Member>()
@@ -428,6 +459,11 @@ class YukiMemberHookCreator internal constructor(private val packageParam: Packa
             if (isLazyMode && hookMode == HookMode.LAZY_MEMBERS || hookMode == HookMode.IMMEDIATE) hook()
         }
 
+        /** Reserves Hook IDs in DSL declaration order before asynchronous installation. */
+        private fun reserveHookIds() {
+            members.forEach { member -> reservedHookIds.getOrPut(member) { HookCompatHelper.reserveHookId(member, priority) } }
+        }
+
         /** Hook execution entry point. */
         internal fun hook() {
             if (HookApiCategoryHelper.hasAvailableHookApi.not() || isHooklessScope || isHooked || isDisableMemberRunHook) return
@@ -437,6 +473,7 @@ class YukiMemberHookCreator internal constructor(private val packageParam: Packa
                     onHookingFailureCallback?.invoke(it)
                     onAllFailureCallback?.invoke(it)
                     if (isNotIgnoredHookingFailure) hookErrorMsg(it)
+                    if (HookCompatHelper.isHotReloadCapturing && isNotIgnoredHookingFailure) throw it
                 }
                 return
             }
@@ -455,14 +492,14 @@ class YukiMemberHookCreator internal constructor(private val packageParam: Packa
                     onHookingFailureCallback?.invoke(it)
                     onAllFailureCallback?.invoke(it)
                     if (isNotIgnoredHookingFailure) hookErrorMsg(it, member)
+                    if (HookCompatHelper.isHotReloadCapturing && isNotIgnoredHookingFailure) throw it
                 }
             } ?: Throwable("Finding Error isSetUpMember [$isHookMemberSetup]").also {
                 onNoSuchMemberFailureCallback?.invoke(it)
                 onHookingFailureCallback?.invoke(it)
                 onAllFailureCallback?.invoke(it)
                 // No warning is issued for instances not created using [injectMember].
-                if (hookMode != HookMode.LAZY_CLASSES) return
-                if (isNotIgnoredNoSuchMemberFailure) YLog.innerE(
+                if (hookMode == HookMode.LAZY_CLASSES && isNotIgnoredNoSuchMemberFailure) YLog.innerE(
                     msg = when {
                         hookClass.isPlaceholder ->
                             if (isHookMemberSetup)
@@ -474,6 +511,7 @@ class YukiMemberHookCreator internal constructor(private val packageParam: Packa
                             else "Hooked Member cannot be null by $hookClass]"
                     }, e = findingThrowable ?: it
                 )
+                if (HookCompatHelper.isHotReloadCapturing && isNotIgnoredNoSuchMemberFailure) throw (findingThrowable ?: it)
             }
         }
 
@@ -535,7 +573,11 @@ class YukiMemberHookCreator internal constructor(private val packageParam: Packa
                     }
                 }
             }
-            return YukiHookHelper.hookMember(member = this, if (isReplaceHookMode) replaceMent else beforeAfterHook)
+            return YukiHookHelper.hookMember(
+                member = this,
+                callback = if (isReplaceHookMode) replaceMent else beforeAfterHook,
+                reservedId = reservedHookIds[this]
+            )
         }
 
         /**
@@ -785,6 +827,9 @@ class YukiMemberHookCreator internal constructor(private val packageParam: Packa
 
             /** Hook execution entry point. */
             internal fun hook() = this@MemberHookCreator.hook()
+
+            /** Reserves Hook IDs before an asynchronous legacy Hook is dispatched. */
+            internal fun reserveHookIds() = this@MemberHookCreator.reserveHookIds()
 
             override fun toString() = "LegacyCreator by ${this@MemberHookCreator}"
         }

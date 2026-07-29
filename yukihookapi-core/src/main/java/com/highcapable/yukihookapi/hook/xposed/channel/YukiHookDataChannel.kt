@@ -118,11 +118,28 @@ class YukiHookDataChannel private constructor() {
         /** The current [YukiHookDataChannel] singleton. */
         private var instance: YukiHookDataChannel? = null
 
+        /** Serializes receiver registration with hot reload retirement. */
+        private val hotReloadReceiverLock = Any()
+
+        /** Whether this module generation has begun retiring for hot reload. */
+        private var isHotReloadRetiring = false
+
         /**
          * Gets the [YukiHookDataChannel] singleton.
          * @return [YukiHookDataChannel]
          */
-        internal fun instance() = instance ?: YukiHookDataChannel().apply { instance = this }
+        internal fun instance() = synchronized(hotReloadReceiverLock) {
+            instance ?: YukiHookDataChannel().apply { instance = this }
+        }
+
+        /** Unregisters the host receiver before the current module generation is retired. */
+        internal fun releaseForHotReload() {
+            synchronized(hotReloadReceiverLock) {
+                isHotReloadRetiring = true
+                instance?.unregister()
+                instance = null
+            }
+        }
     }
 
     /**
@@ -135,6 +152,9 @@ class YukiHookDataChannel private constructor() {
 
     /** The [Context] currently used to register broadcasts. */
     private var receiverContext: Context? = null
+
+    /** The receiver instance registered in [receiverContext]. */
+    private var registeredReceiver: BroadcastReceiver? = null
 
     /** Whether data larger than [receiverDataMaxByteSize] may be sent. */
     private var isAllowSendTooLargeData = false
@@ -199,24 +219,40 @@ class YukiHookDataChannel private constructor() {
      * @param packageName the package name. When empty, it is obtained from [Context.getPackageName] on [context].
      */
     internal fun register(context: Context?, packageName: String = context?.packageName ?: "") {
-        if (YukiHookAPI.Configs.isEnableDataChannel.not() || context == null) return
-        receiverContext = context
-        val filter = IntentFilter().apply {
-            addAction(if (isXposedEnvironment) hostActionName(packageName) else moduleActionName(context))
-        }
-        context.registerReceiver(filter, exported = true, body = handlerReceiver)
-        // Prevents the module from registering its own broadcast in the module environment.
-        if (isXposedEnvironment.not()) return
-        nameSpace(context, packageName).with {
-            // Registers a listener that checks whether module and host app versions match.
-            wait<String>(GET_MODULE_GENERATED_VERSION) { fromPackageName ->
-                nameSpace(context, fromPackageName).put(RESULT_MODULE_GENERATED_VERSION, moduleGeneratedVersion)
+        synchronized(hotReloadReceiverLock) {
+            if (isHotReloadRetiring || YukiHookAPI.Configs.isEnableDataChannel.not() || context == null || registeredReceiver != null) return
+            receiverContext = context
+            val filter = IntentFilter().apply {
+                addAction(if (isXposedEnvironment) hostActionName(packageName) else moduleActionName(context))
             }
-            // Registers a listener for debug log data exchanged between the module and host app.
-            wait<String>(GET_YUKI_LOGGER_INMEMORY_DATA) { fromPackageName ->
-                nameSpace(context, fromPackageName).put(RESULT_YUKI_LOGGER_INMEMORY_DATA, YLog.inMemoryData)
+            registeredReceiver = context.registerReceiver(filter, exported = true, body = handlerReceiver)
+            // Prevents the module from registering its own broadcast in the module environment.
+            if (isXposedEnvironment.not()) return
+            nameSpace(context, packageName).with {
+                // Registers a listener that checks whether module and host app versions match.
+                wait<String>(GET_MODULE_GENERATED_VERSION) { fromPackageName ->
+                    nameSpace(context, fromPackageName).put(RESULT_MODULE_GENERATED_VERSION, moduleGeneratedVersion)
+                }
+                // Registers a listener for debug log data exchanged between the module and host app.
+                wait<String>(GET_YUKI_LOGGER_INMEMORY_DATA) { fromPackageName ->
+                    nameSpace(context, fromPackageName).put(RESULT_YUKI_LOGGER_INMEMORY_DATA, YLog.inMemoryData)
+                }
             }
         }
+    }
+
+    /** Releases receiver state owned by this module generation. */
+    private fun unregister() {
+        registeredReceiver?.let { receiver ->
+            try {
+                receiverContext?.unregisterReceiver(receiver)
+            } catch (_: IllegalArgumentException) {
+                // The receiver was already removed by its host Context.
+            }
+        }
+        registeredReceiver = null
+        receiverContext = null
+        receiverCallbacks.clear()
     }
 
     /**

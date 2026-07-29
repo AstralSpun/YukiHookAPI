@@ -234,6 +234,7 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
                 if (modulePropertiesFile.isFile) modulePropertiesFile.inputStream().use { load(it) }
                 setProperty("minApiVersion", "102")
                 setProperty("targetApiVersion", "102")
+                setProperty("autoHotReload", "true")
             }
             val writer = StringWriter()
             properties.store(writer, null)

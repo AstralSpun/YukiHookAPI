@@ -24,9 +24,11 @@ package com.highcapable.yukihookapi.hook.xposed.bridge
 
 import android.content.pm.ApplicationInfo
 import android.content.res.Resources
+import android.os.Bundle
 import com.highcapable.kavaref.extension.hasClass
 import com.highcapable.yukihookapi.YukiHookAPI
 import com.highcapable.yukihookapi.hook.core.api.compat.HookApiCategoryHelper
+import com.highcapable.yukihookapi.hook.core.api.compat.HookCompatHelper
 import com.highcapable.yukihookapi.hook.log.YLog
 import com.highcapable.yukihookapi.hook.param.PackageParam
 import com.highcapable.yukihookapi.hook.param.wrapper.PackageParamWrapper
@@ -41,6 +43,12 @@ import io.github.libxposed.api.XposedInterface
  * Core Xposed module implementation.
  */
 internal object YukiXposedModule : IYukiXposedModuleLifecycle {
+
+    /** Extra identifying a hot reload request explicitly initiated by the module application. */
+    internal const val MANUAL_HOT_RELOAD_EXTRA = "com.highcapable.yukihookapi.extra.MANUAL_HOT_RELOAD"
+
+    /** Identifier used to validate the class-loader-neutral hot reload state array. */
+    private const val HOT_RELOAD_STATE_ID = "YukiHookAPI:HotReloadState:1"
 
     /** Whether the Xposed module has been loaded. */
     private var isModuleLoaded = false
@@ -151,7 +159,8 @@ internal object YukiXposedModule : IYukiXposedModuleLifecycle {
         appResources: YukiResources? = null
     ) = run {
         isInitializingZygote = type == HookEntryType.ZYGOTE
-        if (packageParamWrappers[packageName] == null)
+        val wrapperId = if (type == HookEntryType.ZYGOTE) "android-zygote" else packageName ?: AppParasitics.SYSTEM_FRAMEWORK_NAME
+        if (packageParamWrappers[wrapperId] == null)
             if (type == HookEntryType.ZYGOTE || appClassLoader != null)
                 PackageParamWrapper(
                     type = type,
@@ -160,9 +169,9 @@ internal object YukiXposedModule : IYukiXposedModuleLifecycle {
                     appClassLoader = appClassLoader ?: ClassLoader.getSystemClassLoader(),
                     appInfo = appInfo,
                     appResources = appResources
-                ).also { packageParamWrappers[packageName ?: AppParasitics.SYSTEM_FRAMEWORK_NAME] = it }
+                ).also { packageParamWrappers[wrapperId] = it }
             else null
-        else packageParamWrappers[packageName]?.also { wrapper ->
+        else packageParamWrappers[wrapperId]?.also { wrapper ->
             wrapper.type = type
             packageName?.takeIf { it.isNotBlank() }?.also { wrapper.packageName = it }
             processName?.takeIf { it.isNotBlank() }?.also { wrapper.processName = it }
@@ -178,7 +187,7 @@ internal object YukiXposedModule : IYukiXposedModuleLifecycle {
     }
 
     override fun onStartLoadModule(base: XposedInterface, packageName: String, appFilePath: String) {
-        HookApiCategoryHelper.attach(base)
+        HookApiCategoryHelper.attach(HookCompatHelper.trackHotReloadHandles(base))
         isModuleLoaded = true
         modulePackageName = packageName
         moduleAppFilePath = appFilePath
@@ -187,6 +196,73 @@ internal object YukiXposedModule : IYukiXposedModuleLifecycle {
 
     override fun onFinishLoadModule() {
         isModuleLoadFinished = true
+    }
+
+    override fun isHotReloadAllowed(extras: Bundle?) =
+        extras?.getBoolean(MANUAL_HOT_RELOAD_EXTRA) == true || YukiHookAPI.Configs.isEnableAutoHotReload
+
+    override fun sanitizeHotReloadExtras(extras: Bundle?) = extras?.let {
+        Bundle(it).apply { remove(MANUAL_HOT_RELOAD_EXTRA) }.takeUnless { sanitized -> sanitized.isEmpty }
+    }
+
+    override fun onHotReloading(inheritedState: Any?): Any {
+        HookCompatHelper.ensureHotReloadable()
+        AppParasitics.ensureHotReloadable()
+        return inheritedState?.also { validateHotReloadState(it) } ?: arrayOf(
+            HOT_RELOAD_STATE_ID,
+            packageParamWrappers.values.map { wrapper ->
+                arrayOf(
+                    wrapper.type.name,
+                    wrapper.packageName,
+                    wrapper.processName,
+                    wrapper.appClassLoader,
+                    wrapper.appInfo
+                )
+            }.toTypedArray()
+        )
+    }
+
+    override fun onHotReloadingAccepted() {
+        AppParasitics.releaseForHotReload()
+    }
+
+    override fun onStartHotReload(oldHookHandles: List<XposedInterface.HookHandle>) {
+        HookCompatHelper.beginHotReload(oldHookHandles)
+    }
+
+    /** Validates and returns package state transferred between module generations. */
+    private fun validateHotReloadState(savedInstanceState: Any?): Array<*> {
+        val state = savedInstanceState as? Array<*> ?: error("Invalid YukiHookAPI hot reload state")
+        check(state.getOrNull(0) == HOT_RELOAD_STATE_ID) { "Unsupported YukiHookAPI hot reload state" }
+        check(state.getOrNull(1) is Array<*>) { "Missing YukiHookAPI package state" }
+        return state
+    }
+
+    override fun onHotReloaded(savedInstanceState: Any?) {
+        val state = validateHotReloadState(savedInstanceState)
+        val wrappers = state.getOrNull(1) as? Array<*> ?: error("Missing YukiHookAPI package state")
+        wrappers.forEach { item ->
+            val wrapper = item as? Array<*> ?: error("Invalid YukiHookAPI package state")
+            onPackageLoaded(
+                type = HookEntryType.valueOf(wrapper.getOrNull(0) as? String ?: error("Missing Hook entry type")),
+                packageName = wrapper.getOrNull(1) as? String ?: error("Missing package name"),
+                processName = wrapper.getOrNull(2) as? String ?: error("Missing process name"),
+                appClassLoader = wrapper.getOrNull(3) as? ClassLoader ?: error("Missing app ClassLoader"),
+                appInfo = wrapper.getOrNull(4) as? ApplicationInfo
+            )
+        }
+        AppParasitics.restoreAfterHotReload()
+        HookCompatHelper.commitHotReload()
+    }
+
+    override fun onFinishHotReload() {
+        HookCompatHelper.finishHotReload()
+    }
+
+    override fun onAbortHotReload(oldHookHandles: List<XposedInterface.HookHandle>) {
+        HookCompatHelper.abortHotReload(oldHookHandles)
+        runCatching { AppParasitics.releaseForHotReload() }
+            .onFailure { YLog.innerE("Failed to release YukiHookAPI state after hot reload failure", it) }
     }
 
     override fun onPackageLoaded(
@@ -210,14 +286,19 @@ internal object YukiXposedModule : IYukiXposedModuleLifecycle {
                 if (isPackageLoaded(packageName, HookEntryType.RESOURCES).not() && packageName == AppParasitics.currentPackageName)
                     assignWrapper(HookEntryType.RESOURCES, packageName, appResources = appResources)
                 else null
-        }?.also {
-            runCatching {
-                packageParamCallback?.invoke(it.instantiate().assign(it).apply { YukiHookAPI.printSplashInfo() })
-                if (it.type != HookEntryType.ZYGOTE && it.packageName == modulePackageName)
-                    AppParasitics.hookModuleAppRelated(it.appClassLoader, it.type)
-                if (it.type == HookEntryType.PACKAGE) AppParasitics.registerToAppLifecycle(it.packageName)
-                if (it.type == HookEntryType.RESOURCES) isSupportResourcesHook = true
-            }.onFailure { YLog.innerE("An exception occurred in the Hooking Process of YukiHookAPI", it) }
+        }?.also { wrapper ->
+            HookCompatHelper.withHotReloadReplay("package:${wrapper.type}:${wrapper.wrapperNameId}") {
+                runCatching {
+                    packageParamCallback?.invoke(wrapper.instantiate().assign(wrapper).apply { YukiHookAPI.printSplashInfo() })
+                    if (wrapper.type != HookEntryType.ZYGOTE && wrapper.packageName == modulePackageName)
+                        AppParasitics.hookModuleAppRelated(wrapper.appClassLoader, wrapper.type)
+                    if (wrapper.type == HookEntryType.PACKAGE) AppParasitics.registerToAppLifecycle(wrapper.packageName)
+                    if (wrapper.type == HookEntryType.RESOURCES) isSupportResourcesHook = true
+                }.onFailure {
+                    YLog.innerE("An exception occurred in the Hooking Process of YukiHookAPI", it)
+                    if (HookCompatHelper.isHotReloadCapturing) throw it
+                }
+            }
         }
     }
 }

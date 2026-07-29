@@ -27,6 +27,7 @@ import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Resources
+import android.os.Bundle
 import com.highcapable.yukihookapi.YukiHookAPI.Configs.debugLog
 import com.highcapable.yukihookapi.YukiHookAPI.configs
 import com.highcapable.yukihookapi.YukiHookAPI.encase
@@ -261,6 +262,36 @@ object YukiHookAPI {
                 val failureMessage: String? = null
             )
 
+            /** Result status of a libxposed API 102 hot reload request. */
+            enum class HotReloadStatus {
+                /** Hot reload completed successfully. */
+                SUCCEEDED,
+
+                /** The target rejected hot reload or an exception occurred. */
+                FAILED,
+
+                /** The target or Hook Framework does not support hot reload. */
+                UNSUPPORTED,
+
+                /** Another hot reload request is already running for the target. */
+                IN_PROGRESS,
+
+                /** The target process died before hot reload completed. */
+                PROCESS_DIED
+            }
+
+            /**
+             * Result delivered after requesting hot reload for one running target.
+             * @property target the target for which hot reload was requested.
+             * @property status the hot reload completion status.
+             * @property message the optional diagnostic message reported by the Hook Framework.
+             */
+            data class HotReloadResult(
+                val target: RunningTarget,
+                val status: HotReloadStatus,
+                val message: String? = null
+            )
+
             /**
              * Whether at least one libxposed service is connected and responsive.
              * @return [Boolean]
@@ -302,6 +333,42 @@ object YukiHookAPI {
              * @return [Boolean] whether at least one removal was dispatched.
              */
             fun removeScope(packages: List<String>): Boolean = YukiXposedService.removeScope(packages.toList())
+
+            /**
+             * Requests manual hot reload for one running target.
+             *
+             * Manual requests remain available when [Configs.isEnableAutoHotReload] is disabled.
+             * The [target] must be an instance returned by [runningTargets]; copied or manually created instances are rejected.
+             * The [extras] must contain only class-loader-neutral framework values.
+             *
+             * The [callback] may run on a Binder thread.
+             * @param target the running target to reload.
+             * @param extras optional data delivered to the old and new Hook entry generations.
+             * @param callback callback invoked when the request completes.
+             * @return [Boolean] whether the request was dispatched.
+             */
+            fun hotReload(
+                target: RunningTarget,
+                extras: Bundle? = null,
+                callback: (HotReloadResult) -> Unit = {}
+            ): Boolean = YukiXposedService.hotReload(target, extras, callback)
+
+            /**
+             * Requests manual hot reload for all [RunningTargetState.STALE] and [RunningTargetState.FAILED] targets.
+             *
+             * [RunningTargetState.UP_TO_DATE] and [RunningTargetState.RELOADING] targets are skipped.
+             * Manual requests remain available when [Configs.isEnableAutoHotReload] is disabled.
+             * The [extras] must contain only class-loader-neutral framework values.
+             *
+             * The [callback] may run on a Binder thread and is invoked once for each dispatched target.
+             * @param extras optional data delivered to the old and new Hook entry generations.
+             * @param callback callback invoked for each completed request.
+             * @return [Int] number of requests dispatched.
+             */
+            fun hotReloadAll(
+                extras: Bundle? = null,
+                callback: (HotReloadResult) -> Unit = {}
+            ): Int = YukiXposedService.hotReloadAll(extras, callback)
         }
 
         /**
@@ -478,6 +545,20 @@ object YukiHookAPI {
          * - This feature is enabled by default. When disabled, initialization does not load [YukiHookDataChannel].
          */
         var isEnableDataChannel = true
+
+        /**
+         * Whether module APK updates may automatically hot-reload this module in already running target processes.
+         *
+         * This feature is disabled by default. It affects only update-triggered requests; manual requests made through
+         * [Status.Service.hotReload] or [Status.Service.hotReloadAll] remain available.
+         *
+         * Hot reload automatically rebuilds Yuki Hooks installed while replaying the package callback. A request is rejected
+         * while later runtime Yuki Hooks or an Activity Proxy are active because their lifecycle cannot be recreated safely.
+         * Module-owned threads, JNI hooks, native libxposed Hooks, and other callbacks must be cleaned up and restored through
+         * the optional hot reload callbacks of
+         * [com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit].
+         */
+        var isEnableAutoHotReload = false
 
         /**
          * Whether [Member] caching is enabled.

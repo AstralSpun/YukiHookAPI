@@ -29,6 +29,7 @@ import android.app.Activity
 import android.app.ActivityManager
 import android.app.Application
 import android.app.Instrumentation
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -50,6 +51,7 @@ import com.highcapable.kavaref.extension.lazyClassOrNull
 import com.highcapable.kavaref.extension.toClassOrNull
 import com.highcapable.yukihookapi.YukiHookAPI
 import com.highcapable.yukihookapi.hook.core.api.compat.HookApiProperty
+import com.highcapable.yukihookapi.hook.core.api.compat.HookCompatHelper
 import com.highcapable.yukihookapi.hook.core.api.helper.YukiHookHelper
 import com.highcapable.yukihookapi.hook.core.api.proxy.YukiHookCallback
 import com.highcapable.yukihookapi.hook.core.api.proxy.YukiMemberHook
@@ -76,6 +78,12 @@ internal object AppParasitics {
     /** The Android system framework name. */
     internal const val SYSTEM_FRAMEWORK_NAME = "android"
 
+    /** Serializes callbacks and registrations that can retain the current module generation. */
+    private val hotReloadLifecycleLock = Any()
+
+    /** Whether this module generation has begun retiring for hot reload. */
+    private var isHotReloadRetiring = false
+
     /** Whether [YukiHookDataChannel] has been registered. */
     private var isDataChannelRegistered = false
 
@@ -90,6 +98,9 @@ internal object AppParasitics {
 
     /** Lifecycle actors for the current host app. */
     private val appLifecycleActors = mutableMapOf<String, AppLifecycleActor>()
+
+    /** Receivers registered for [appLifecycleActors] in the current module generation. */
+    private val registeredLifecycleReceivers = mutableListOf<Pair<Context, BroadcastReceiver>>()
 
     private val ActivityThreadClass by lazyClass("android.app.ActivityThread")
     private val ContextImplClass by lazyClass("android.app.ContextImpl")
@@ -209,8 +220,12 @@ internal object AppParasitics {
     internal fun hookClassLoader(loader: ClassLoader?, result: (Class<*>) -> Unit) {
         if (loader == null) return
         if (YukiXposedModule.isXposedEnvironment.not()) return YLog.innerW("You can only use hook ClassLoader method in Xposed Environment")
-        classLoaderCallbacks[loader.hashCode()] = result
-        if (isClassLoaderHooked) return
+        val shouldInstall = synchronized(hotReloadLifecycleLock) {
+            if (isHotReloadRetiring) return
+            classLoaderCallbacks[loader.hashCode()] = result
+            isClassLoaderHooked.not()
+        }
+        if (shouldInstall.not()) return
         val loadClass = ClassLoader::class.resolve()
             .optional(silent = true)
             .firstMethodOrNull {
@@ -221,12 +236,60 @@ internal object AppParasitics {
             YukiHookHelper.hook(loadClass, object : YukiMemberHook() {
                 override fun afterHookedMember(param: Param) {
                     param.instance?.also { loader ->
-                        (param.result as? Class<*>?)?.also { classLoaderCallbacks[loader.hashCode()]?.invoke(it) }
+                        (param.result as? Class<*>?)?.also { loadedClass ->
+                            synchronized(hotReloadLifecycleLock) {
+                                classLoaderCallbacks[loader.hashCode()].takeIf { isHotReloadRetiring.not() }
+                            }?.invoke(loadedClass)
+                        }
                     }
                 }
             })
-            isClassLoaderHooked = true
-        }.onFailure { YLog.innerW("Try to hook ClassLoader failed: $it") }
+            synchronized(hotReloadLifecycleLock) {
+                if (isHotReloadRetiring.not()) isClassLoaderHooked = true
+            }
+        }.onFailure {
+            YLog.innerW("Try to hook ClassLoader failed: $it")
+            if (HookCompatHelper.isHotReloadCapturing) throw it
+        }
+    }
+
+    /** Ensures that Yuki-owned parasitic state can be safely rebuilt by hot reload. */
+    internal fun ensureHotReloadable() {
+        check(isActivityProxyRegistered.not()) {
+            "YukiHookAPI Activity Proxy cannot be hot reloaded because host objects retain its current implementation"
+        }
+    }
+
+    /** Releases callbacks and receivers owned by the current module generation. */
+    internal fun releaseForHotReload() {
+        val receivers = synchronized(hotReloadLifecycleLock) {
+            isHotReloadRetiring = true
+            val registeredReceivers = registeredLifecycleReceivers.toList()
+            registeredLifecycleReceivers.clear()
+            appLifecycleActors.clear()
+            classLoaderCallbacks.clear()
+            AppLifecycleActor.isOnFailureThrowToApp = null
+            isDataChannelRegistered = false
+            isClassLoaderHooked = false
+            hostApplication = null
+            registeredReceivers
+        }
+        receivers.forEach { (context, receiver) ->
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (_: IllegalArgumentException) {
+                // The receiver was already removed by its host Context.
+            }
+        }
+        YukiHookDataChannel.releaseForHotReload()
+    }
+
+    /** Invokes lifecycle callbacks only while the current module generation remains active. */
+    private fun forEachActiveLifecycleActor(block: (AppLifecycleActor) -> Unit) {
+        val actors = synchronized(hotReloadLifecycleLock) {
+            appLifecycleActors.values.toList().takeIf { isHotReloadRetiring.not() }.orEmpty()
+        }
+        actors.forEach(block)
     }
 
     /**
@@ -284,6 +347,10 @@ internal object AppParasitics {
      * @param packageName the package name.
      */
     internal fun registerToAppLifecycle(packageName: String) {
+        val hasLifecycleActors = synchronized(hotReloadLifecycleLock) {
+            if (isHotReloadRetiring) return
+            appLifecycleActors.isNotEmpty()
+        }
         /**
          * Throws an exception to the current host app or prints an error log.
          * @param throwable the current exception.
@@ -294,11 +361,11 @@ internal object AppParasitics {
         }
         // Hooks [Application] loading methods.
         runCatching {
-            if (appLifecycleActors.isNotEmpty()) Application::class.resolve().optional(silent = true).apply {
+            if (hasLifecycleActors) Application::class.resolve().optional(silent = true).apply {
                 YukiHookHelper.hook(firstMethod { name = "attach"; parameters(Context::class) }, object : YukiMemberHook() {
                     override fun beforeHookedMember(param: Param) {
                         runCatching {
-                            appLifecycleActors.forEach { (_, actor) ->
+                            forEachActiveLifecycleActor { actor ->
                                 (param.args?.get(0) as? Context?)?.also { actor.attachBaseContextCallback?.invoke(it, false) }
                             }
                         }.onFailure { param.throwToAppOrLogger(it) }
@@ -306,7 +373,7 @@ internal object AppParasitics {
 
                     override fun afterHookedMember(param: Param) {
                         runCatching {
-                            appLifecycleActors.forEach { (_, actor) ->
+                            forEachActiveLifecycleActor { actor ->
                                 (param.args?.get(0) as? Context?)?.also { actor.attachBaseContextCallback?.invoke(it, true) }
                             }
                         }.onFailure { param.throwToAppOrLogger(it) }
@@ -315,7 +382,7 @@ internal object AppParasitics {
                 YukiHookHelper.hook(firstMethod { name = "onTerminate" }, object : YukiMemberHook() {
                     override fun afterHookedMember(param: Param) {
                         runCatching {
-                            appLifecycleActors.forEach { (_, actor) ->
+                            forEachActiveLifecycleActor { actor ->
                                 (param.instance as? Application?)?.also { actor.onTerminateCallback?.invoke(it) }
                             }
                         }.onFailure { param.throwToAppOrLogger(it) }
@@ -324,7 +391,7 @@ internal object AppParasitics {
                 YukiHookHelper.hook(firstMethod { name = "onLowMemory" }, object : YukiMemberHook() {
                     override fun afterHookedMember(param: Param) {
                         runCatching {
-                            appLifecycleActors.forEach { (_, actor) ->
+                            forEachActiveLifecycleActor { actor ->
                                 (param.instance as? Application?)?.also { actor.onLowMemoryCallback?.invoke(it) }
                             }
                         }.onFailure { param.throwToAppOrLogger(it) }
@@ -335,7 +402,7 @@ internal object AppParasitics {
                         runCatching {
                             val self = param.instance as? Application? ?: return
                             val type = param.args?.get(0) as? Int? ?: return
-                            appLifecycleActors.forEach { (_, actor) -> actor.onTrimMemoryCallback?.invoke(self, type) }
+                            forEachActiveLifecycleActor { actor -> actor.onTrimMemoryCallback?.invoke(self, type) }
                         }.onFailure { param.throwToAppOrLogger(it) }
                     }
                 })
@@ -344,52 +411,73 @@ internal object AppParasitics {
                         runCatching {
                             val self = param.instance as? Application? ?: return
                             val config = param.args?.get(0) as? Configuration? ?: return
-                            appLifecycleActors.forEach { (_, actor) -> actor.onConfigurationChangedCallback?.invoke(self, config) }
+                            forEachActiveLifecycleActor { actor -> actor.onConfigurationChangedCallback?.invoke(self, config) }
                         }.onFailure { param.throwToAppOrLogger(it) }
                     }
                 })
             }
-            if (YukiHookAPI.Configs.isEnableDataChannel || appLifecycleActors.isNotEmpty())
+            if (YukiHookAPI.Configs.isEnableDataChannel || hasLifecycleActors)
                 YukiHookHelper.hook(
                     Instrumentation::class.resolve().optional(silent = true).firstMethodOrNull { name = "callApplicationOnCreate" },
                     object : YukiMemberHook() {
                         override fun afterHookedMember(param: Param) {
                             runCatching {
-                                (param.args?.get(0) as? Application?)?.also {
-                                    /**
-                                     * Registers a broadcast receiver.
-                                     * @param result the callback receiving the current [Context] and [Intent].
-                                     */
-                                    fun IntentFilter.registerReceiver(result: (Context, Intent) -> Unit) {
-                                        it.registerReceiver(filter = this, exported = true) { context, intent ->
-                                            result(context, intent)
-                                        }
-                                    }
-                                    hostApplication = it
-                                    appLifecycleActors.forEach { (_, actor) ->
-                                        actor.onCreateCallback?.invoke(it)
-                                        actor.onReceiverActionsCallbacks.takeIf { e -> e.isNotEmpty() }?.forEach { (_, e) ->
-                                            if (e.first.isNotEmpty()) IntentFilter().apply {
-                                                e.first.forEach { action -> addAction(action) }
-                                            }.registerReceiver(e.second)
-                                        }
-                                        actor.onReceiverFiltersCallbacks.takeIf { e -> e.isNotEmpty() }
-                                            ?.forEach { (_, e) -> e.first.registerReceiver(e.second) }
-                                    }
-                                    runCatching {
-                                        // Filters cases where the system framework and service components do not have unique package names.
-                                        if (isDataChannelRegistered ||
-                                            (currentPackageName == SYSTEM_FRAMEWORK_NAME && packageName != SYSTEM_FRAMEWORK_NAME)
-                                        ) return
-                                        YukiHookDataChannel.instance().register(it, packageName)
-                                        isDataChannelRegistered = true
-                                    }
-                                }
+                                (param.args?.get(0) as? Application?)?.also { initializeApplication(it, packageName, invokeOnCreate = true) }
                             }.onFailure { param.throwToAppOrLogger(it) }
                         }
                     }
                 )
+        }.onFailure {
+            YLog.innerE("App lifecycle Hook initialization failed", it)
+            if (HookCompatHelper.isHotReloadCapturing) throw it
         }
+    }
+
+    /** Initializes callbacks that normally become active from [Application.onCreate]. */
+    private fun initializeApplication(application: Application, packageName: String, invokeOnCreate: Boolean) {
+        val actors = synchronized(hotReloadLifecycleLock) {
+            if (isHotReloadRetiring) return
+            hostApplication = application
+            appLifecycleActors.values.toList()
+        }
+        actors.forEach { actor ->
+            if (invokeOnCreate) actor.onCreateCallback?.invoke(application)
+            actor.onReceiverActionsCallbacks.takeIf { it.isNotEmpty() }?.forEach { (_, callback) ->
+                if (callback.first.isNotEmpty()) IntentFilter().apply {
+                    callback.first.forEach { action -> addAction(action) }
+                }.registerLifecycleReceiver(application, callback.second)
+            }
+            actor.onReceiverFiltersCallbacks.takeIf { it.isNotEmpty() }
+                ?.forEach { (_, callback) -> callback.first.registerLifecycleReceiver(application, callback.second) }
+        }
+        runCatching {
+            // Filters cases where the system framework and service components do not have unique package names.
+            val shouldRegisterDataChannel = synchronized(hotReloadLifecycleLock) {
+                isHotReloadRetiring.not() && isDataChannelRegistered.not()
+            } && (currentPackageName != SYSTEM_FRAMEWORK_NAME || packageName == SYSTEM_FRAMEWORK_NAME)
+            if (shouldRegisterDataChannel.not()) return@runCatching
+            YukiHookDataChannel.instance().register(application, packageName)
+            synchronized(hotReloadLifecycleLock) {
+                if (isHotReloadRetiring.not()) isDataChannelRegistered = true
+            }
+        }.onFailure {
+            YLog.innerE("YukiHookDataChannel initialization failed", it)
+            if (HookCompatHelper.isHotReloadCapturing) throw it
+        }
+    }
+
+    /** Registers one lifecycle receiver unless this module generation has begun retiring. */
+    private fun IntentFilter.registerLifecycleReceiver(application: Application, result: (Context, Intent) -> Unit) {
+        synchronized(hotReloadLifecycleLock) {
+            if (isHotReloadRetiring) return
+            application.registerReceiver(filter = this, exported = true) { context, intent -> result(context, intent) }
+                .also { registeredLifecycleReceivers += application to it }
+        }
+    }
+
+    /** Restores callbacks whose original [Application.onCreate] event cannot be replayed by libxposed. */
+    internal fun restoreAfterHotReload() {
+        currentApplication?.also { initializeApplication(it, currentPackageName, invokeOnCreate = false) }
     }
 
     /**
@@ -417,6 +505,8 @@ internal object AppParasitics {
     @RequiresApi(AndroidVersion.N)
     internal fun registerModuleAppActivities(context: Context, proxy: Any?) {
         if (isActivityProxyRegistered) return
+        if (HookCompatHelper.isHotReloadCapturing)
+            error("YukiHookAPI Activity Proxy cannot be initialized while hot reload is being captured")
         if (YukiXposedModule.isXposedEnvironment.not()) return YLog.innerW("You can only register Activity Proxy in Xposed Environment")
         if (context.packageName == YukiXposedModule.modulePackageName) return YLog.innerE("You cannot register Activity Proxy into yourself")
         @SuppressLint("ObsoleteSdkInt")
@@ -517,7 +607,10 @@ internal object AppParasitics {
                 }
             }
             isActivityProxyRegistered = true
-        }.onFailure { YLog.innerE("Activity Proxy initialization failed because got an exception", it) }
+        }.onFailure {
+            YLog.innerE("Activity Proxy initialization failed because got an exception", it)
+            if (HookCompatHelper.isHotReloadCapturing) throw it
+        }
     }
 
     /**
@@ -535,8 +628,10 @@ internal object AppParasitics {
              * @param instance the source instance.
              * @return [AppLifecycleActor]
              */
-            internal fun get(instance: Any) =
-                appLifecycleActors[instance.toString()] ?: AppLifecycleActor().apply { appLifecycleActors[instance.toString()] = this }
+            internal fun get(instance: Any) = synchronized(hotReloadLifecycleLock) {
+                if (isHotReloadRetiring) AppLifecycleActor()
+                else appLifecycleActors[instance.toString()] ?: AppLifecycleActor().apply { appLifecycleActors[instance.toString()] = this }
+            }
         }
 
         /** [Application.attachBaseContext] callback. */

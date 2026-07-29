@@ -24,6 +24,7 @@
 package com.highcapable.yukihookapi.hook.xposed.bridge.caller
 
 import android.content.pm.ApplicationInfo
+import android.os.Bundle
 import com.highcapable.yukihookapi.hook.log.YLog
 import com.highcapable.yukihookapi.hook.xposed.bridge.YukiXposedModule
 import com.highcapable.yukihookapi.hook.xposed.bridge.resources.YukiResources
@@ -54,6 +55,32 @@ internal object YukiXposedModuleCaller {
      * Signals that the Xposed module finished loading.
      */
     internal fun callOnFinishLoadModule() = YukiXposedModule.onFinishLoadModule()
+
+    /** Returns whether the requested hot reload is enabled for the current generation. */
+    internal fun callIsHotReloadAllowed(extras: Bundle?) = YukiXposedModule.isHotReloadAllowed(extras)
+
+    /** Removes internal request metadata before extras are exposed to module code. */
+    internal fun callSanitizeHotReloadExtras(extras: Bundle?) = YukiXposedModule.sanitizeHotReloadExtras(extras)
+
+    /** Validates hot reload and captures process state owned by the old module generation. */
+    internal fun callOnHotReloading(inheritedState: Any?) = YukiXposedModule.onHotReloading(inheritedState)
+
+    /** Releases YukiHookAPI-owned external callbacks after module cleanup accepts hot reload. */
+    internal fun callOnHotReloadingAccepted() = YukiXposedModule.onHotReloadingAccepted()
+
+    /** Starts tracking native Handles created by the incoming module generation. */
+    internal fun callOnStartHotReload(oldHookHandles: List<XposedInterface.HookHandle>) =
+        YukiXposedModule.onStartHotReload(oldHookHandles)
+
+    /** Replays package state and commits new-generation Yuki Hooks. */
+    internal fun callOnHotReloaded(savedInstanceState: Any?) = YukiXposedModule.onHotReloaded(savedInstanceState)
+
+    /** Releases previous-generation transaction state after a successful hot reload. */
+    internal fun callOnFinishHotReload() = YukiXposedModule.onFinishHotReload()
+
+    /** Removes all Hooks participating in a failed hot reload transaction. */
+    internal fun callOnAbortHotReload(oldHookHandles: List<XposedInterface.HookHandle>) =
+        YukiXposedModule.onAbortHotReload(oldHookHandles)
 
     /**
      * Signals that an available host app started loading.

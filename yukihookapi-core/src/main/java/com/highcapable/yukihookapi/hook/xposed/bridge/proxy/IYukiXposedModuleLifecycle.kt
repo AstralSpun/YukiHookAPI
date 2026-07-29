@@ -22,6 +22,7 @@
 package com.highcapable.yukihookapi.hook.xposed.bridge.proxy
 
 import android.content.pm.ApplicationInfo
+import android.os.Bundle
 import com.highcapable.yukihookapi.hook.xposed.bridge.resources.YukiResources
 import com.highcapable.yukihookapi.hook.xposed.bridge.type.HookEntryType
 import io.github.libxposed.api.XposedInterface
@@ -41,6 +42,30 @@ internal interface IYukiXposedModuleLifecycle {
 
     /** Called when the Xposed module finishes loading. */
     fun onFinishLoadModule()
+
+    /** Returns whether an automatic or manual hot reload request may proceed. */
+    fun isHotReloadAllowed(extras: Bundle?): Boolean
+
+    /** Removes YukiHookAPI-private values from hot reload extras before exposing them to module code. */
+    fun sanitizeHotReloadExtras(extras: Bundle?): Bundle?
+
+    /** Validates hot reload and captures class-loader-neutral process state before the old module generation is retired. */
+    fun onHotReloading(inheritedState: Any?): Any
+
+    /** Releases YukiHookAPI-owned external callbacks after module cleanup has accepted hot reload. */
+    fun onHotReloadingAccepted()
+
+    /** Starts tracking all native Handles created while the new module generation is initialized. */
+    fun onStartHotReload(oldHookHandles: List<XposedInterface.HookHandle>)
+
+    /** Rebuilds and commits Yuki Hooks in the new module generation. */
+    fun onHotReloaded(savedInstanceState: Any?)
+
+    /** Finishes a successful new-generation transaction. */
+    fun onFinishHotReload()
+
+    /** Removes all previous-generation and partially installed new-generation Hooks after a failure. */
+    fun onAbortHotReload(oldHookHandles: List<XposedInterface.HookHandle>)
 
     /**
      * Called when an available host app starts loading.

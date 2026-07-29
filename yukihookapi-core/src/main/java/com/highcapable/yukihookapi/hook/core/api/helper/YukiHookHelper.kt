@@ -49,8 +49,8 @@ internal object YukiHookHelper {
      * @param callback the Hook callback.
      * @return [YukiHookResult]
      */
-    internal fun hookMember(member: Member?, callback: YukiHookCallback) =
-        YukiHookResult(hookedMember = HookCompatHelper.hookMember(member, callback))
+    internal fun hookMember(member: Member?, callback: YukiHookCallback, reservedId: String? = null) =
+        YukiHookResult(hookedMember = HookCompatHelper.hookMember(member, callback, reservedId))
 
     /**
      * Invokes the original [Member].

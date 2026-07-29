@@ -301,6 +301,8 @@ fun GenerateData.sources() = mapOf(
       import androidx.annotation.Keep
       import ${ExternalCallerName.YukiXposedEventCaller.first}
       import io.github.libxposed.api.XposedModule
+      import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
+      import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
       import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
       import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
       import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
@@ -327,6 +329,12 @@ fun GenerateData.sources() = mapOf(
               ${entryClassName}_Impl.callOnSystemServerStarting(param)
               ${ExternalCallerName.YukiXposedEventCaller.second}.callOnSystemServerStarting(param)
           }
+
+          override fun onHotReloading(param: HotReloadingParam) = ${entryClassName}_Impl.callOnHotReloading(param)
+
+          override fun onHotReloaded(param: HotReloadedParam) {
+              ${entryClassName}_Impl.callOnHotReloaded(this, param)
+          }
       }
     """.trimIndent(),
     ClassName.XposedInit_Impl to """
@@ -337,6 +345,8 @@ fun GenerateData.sources() = mapOf(
       import ${ExternalCallerName.YukiXposedModuleCaller.first}
       import com.highcapable.yukihookapi.hook.xposed.bridge.type.HookEntryType
       import io.github.libxposed.api.XposedInterface
+      import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
+      import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
       import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
       import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
       import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
@@ -345,8 +355,10 @@ fun GenerateData.sources() = mapOf(
       
           private const val MODULE_PACKAGE_NAME = "${customMPackageName.ifBlank { modulePackageName }}"
           private var isModuleLoaded = false
+          private var isHotReloadEntryAttached = false
+          private var hotReloadState: Any? = null
           private var processName = ""
-          private val hookEntry = ${if (isEntryClassKindOfObject) entryClassName else "$entryClassName()"}
+          private val hookEntry by lazy { ${if (isEntryClassKindOfObject) entryClassName else "$entryClassName()"} }
       
           fun callOnModuleLoaded(base: XposedInterface, param: ModuleLoadedParam) {
               if (isModuleLoaded) return
@@ -397,6 +409,55 @@ fun GenerateData.sources() = mapOf(
                   processName = processName,
                   appClassLoader = param.classLoader
               )
+          }
+
+          fun callOnHotReloading(param: HotReloadingParam): Boolean {
+              if (isModuleLoaded.not() && isHotReloadEntryAttached.not()) return false
+              return runCatching {
+                  if (${ExternalCallerName.YukiXposedModuleCaller.second}.callIsHotReloadAllowed(param.extras).not()) return false
+                  val savedInstanceState = ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnHotReloading(hotReloadState)
+                  param.setSavedInstanceState(savedInstanceState)
+                  hookEntry.onHotReloading(${ExternalCallerName.YukiXposedModuleCaller.second}.callSanitizeHotReloadExtras(param.extras))
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnHotReloadingAccepted()
+                  true
+              }.getOrElse {
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callLogError("An exception occurred while preparing YukiHookAPI hot reload", it)
+                  false
+              }
+          }
+
+          fun callOnHotReloaded(base: XposedInterface, param: HotReloadedParam) {
+              if (isModuleLoaded || isHotReloadEntryAttached) return
+              isHotReloadEntryAttached = true
+              hotReloadState = param.savedInstanceState
+              try {
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnStartHotReload(param.oldHookHandles)
+                  processName = param.processName
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnStartLoadModule(
+                      base = base,
+                      packageName = MODULE_PACKAGE_NAME,
+                      appFilePath = base.moduleApplicationInfo.sourceDir
+                  )
+                  hookEntry.onXposedEvent()
+                  hookEntry.onInit()
+                  if (${ExternalCallerName.YukiXposedModuleCaller.second}.isXposedCallbackSetUp) {
+                      error("You cannot load a hooker in onInit or onXposedEvent during hot reload")
+                  }
+                  hookEntry.onHook()
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnFinishLoadModule()
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnHotReloaded(param.savedInstanceState)
+                  hookEntry.onHotReloaded(${ExternalCallerName.YukiXposedModuleCaller.second}.callSanitizeHotReloadExtras(param.extras))
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnFinishHotReload()
+                  isModuleLoaded = true
+                  hotReloadState = null
+              } catch (throwable: Throwable) {
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnAbortHotReload(param.oldHookHandles)
+                  ${ExternalCallerName.YukiXposedModuleCaller.second}.callLogError(
+                      "An exception occurred while applying YukiHookAPI hot reload",
+                      throwable
+                  )
+                  throw throwable
+              }
           }
       }
     """.trimIndent()
