@@ -20,6 +20,7 @@
 package com.highcapable.yukihookapi.hook.dexkit
 
 import com.highcapable.yukihookapi.hook.dexkit.bean.ClassInfo
+import com.highcapable.yukihookapi.hook.dexkit.bean.ConstructorInfo
 import com.highcapable.yukihookapi.hook.dexkit.bean.FieldInfo
 import com.highcapable.yukihookapi.hook.dexkit.bean.MethodInfo
 import com.highcapable.yukihookapi.hook.dexkit.internal.DexResolverRuntime
@@ -70,6 +71,11 @@ class DexResolverScope internal constructor(private val packageParam: PackagePar
     @JvmSynthetic
     fun findMethod(methodInfo: MethodInfo.() -> Unit): MethodFinder =
         MethodInfo().apply(methodInfo).generate(packageParam, runtime)
+
+    /** Creates a constructor finder using the DexKit DSL. */
+    @JvmSynthetic
+    fun findConstructor(constructorInfo: ConstructorInfo.() -> Unit): ConstructorFinder =
+        ConstructorInfo().apply(constructorInfo).generate(packageParam, runtime)
 
     /** Creates a field finder using the XPHelper-compatible DSL. */
     @JvmSynthetic

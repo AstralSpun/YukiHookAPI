@@ -19,7 +19,11 @@
  */
 package com.highcapable.yukihookapi.hook.dexkit
 
+import com.highcapable.yukihookapi.hook.dexkit.bean.ConstructorInfo
+import com.highcapable.yukihookapi.hook.dexkit.bean.FieldInfo
+import com.highcapable.yukihookapi.hook.dexkit.bean.MethodInfo
 import com.highcapable.yukihookapi.hook.dexkit.internal.DexResolverRuntime
+import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.query.FindClass
 import org.luckypray.dexkit.query.enums.MatchType
 import org.luckypray.dexkit.query.matchers.ClassMatcher
@@ -66,6 +70,27 @@ class ClassFinder private constructor(runtime: DexResolverRuntime? = null) {
 
     fun methods(vararg methods: MethodFinder) = apply { this.methods += methods }
 
+    /** Creates a method finder restricted to the classes matched by this finder. */
+    @JvmSynthetic
+    fun findMethod(methodInfo: MethodInfo.() -> Unit): MethodFinder {
+        val runtime = requireRuntime()
+        return MethodInfo().apply(methodInfo).generate(runtime.packageParam, runtime).searchInClass(this)
+    }
+
+    /** Creates a constructor finder restricted to the classes matched by this finder. */
+    @JvmSynthetic
+    fun findConstructor(constructorInfo: ConstructorInfo.() -> Unit): ConstructorFinder {
+        val runtime = requireRuntime()
+        return ConstructorInfo().apply(constructorInfo).generate(runtime.packageParam, runtime).searchInClass(this)
+    }
+
+    /** Creates a field finder restricted to the classes matched by this finder. */
+    @JvmSynthetic
+    fun findField(fieldInfo: FieldInfo.() -> Unit): FieldFinder {
+        val runtime = requireRuntime()
+        return FieldInfo().apply(fieldInfo).generate(runtime).searchInClass(this)
+    }
+
     /** Builds the DexKit matcher represented by this finder. */
     fun buildClassMatcher(): ClassMatcher = ClassMatcher.create().apply {
         this@ClassFinder.className?.let(::className)
@@ -109,6 +134,12 @@ class ClassFinder private constructor(runtime: DexResolverRuntime? = null) {
         if (this@ClassFinder.excludePackages.isNotEmpty()) excludePackages(this@ClassFinder.excludePackages)
         matcher(buildClassMatcher())
     }
+
+    @JvmSynthetic
+    internal fun findData(bridge: DexKitBridge) = bridge.findClass(buildFindClass())
+
+    @JvmSynthetic
+    internal fun queryHashKey() = buildFindClass().hashKey()
 
     private fun requireRuntime() = runtime ?: synchronized(this) {
         runtime ?: DexResolverRuntime.current().also { runtime = it }

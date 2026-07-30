@@ -45,6 +45,7 @@ class FieldFinder private constructor(runtime: DexResolverRuntime? = null) {
     private val excludePackages = mutableListOf<String>()
     private val readMethods = mutableListOf<MethodFinder>()
     private val writeMethods = mutableListOf<MethodFinder>()
+    private var searchClassFinder: ClassFinder? = null
 
     fun readMethods(vararg methods: MethodFinder) = apply { readMethods += methods }
 
@@ -69,6 +70,9 @@ class FieldFinder private constructor(runtime: DexResolverRuntime? = null) {
 
     fun excludePackages(vararg packages: String) = apply { excludePackages += packages }
 
+    @JvmSynthetic
+    internal fun searchInClass(classFinder: ClassFinder) = apply { searchClassFinder = classFinder }
+
     /** Builds the DexKit matcher represented by this finder. */
     fun buildFieldMatcher(): FieldMatcher = FieldMatcher.create().apply {
         this@FieldFinder.declaredClass?.let(::declaredClass)
@@ -83,13 +87,15 @@ class FieldFinder private constructor(runtime: DexResolverRuntime? = null) {
     fun find(): List<Field> {
         val runtime = requireRuntime()
         val query = buildFindField()
-        runtime.cache.getFieldList(query.hashKey())?.let { return it }
+        val key = queryHashKey(query)
+        runtime.cache.getFieldList(key)?.let { return it }
         return try {
             runtime.withBridge { bridge ->
-                bridge.findField(query).map {
+                val result = searchClassFinder?.findData(bridge)?.findField(query) ?: bridge.findField(query)
+                result.map {
                     it.getFieldInstance(runtime.classLoader).apply { isAccessible = true }
                 }
-            }.also { runtime.cache.putFieldList(query.hashKey(), it) }
+            }.also { runtime.cache.putFieldList(key, it) }
         } catch (_: Exception) {
             emptyList()
         }
@@ -105,7 +111,7 @@ class FieldFinder private constructor(runtime: DexResolverRuntime? = null) {
     /** Returns whether this finder has a cached result. */
     fun existCache(): Boolean {
         val runtime = requireRuntime()
-        return runtime.cache.containsFieldList(buildFindField().hashKey())
+        return runtime.cache.containsFieldList(queryHashKey(buildFindField()))
     }
 
     private fun buildFindField() = FindField.create().apply {
@@ -113,6 +119,10 @@ class FieldFinder private constructor(runtime: DexResolverRuntime? = null) {
         if (this@FieldFinder.excludePackages.isNotEmpty()) excludePackages(this@FieldFinder.excludePackages)
         matcher(buildFieldMatcher())
     }
+
+    private fun queryHashKey(query: FindField) = searchClassFinder?.let {
+        "class:${it.queryHashKey()}:field:${query.hashKey()}"
+    } ?: query.hashKey()
 
     private fun requireRuntime() = runtime ?: synchronized(this) {
         runtime ?: DexResolverRuntime.current().also { runtime = it }

@@ -26,11 +26,12 @@ import com.highcapable.yukihookapi.hook.param.PackageParam
 import org.luckypray.dexkit.query.FindMethod
 import org.luckypray.dexkit.query.enums.MatchType
 import org.luckypray.dexkit.query.matchers.MethodMatcher
+import java.lang.reflect.Constructor
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 
-/** XPHelper-compatible DexKit method finder. */
-class MethodFinder private constructor(
+/** DexKit constructor finder. */
+class ConstructorFinder private constructor(
     private val packageParam: PackageParam? = null,
     runtime: DexResolverRuntime? = null
 ) {
@@ -38,13 +39,11 @@ class MethodFinder private constructor(
     @Volatile
     private var runtime = runtime
 
-    /** Creates a finder that can be used as a nested matcher. */
+    /** Creates a standalone constructor finder. */
     constructor() : this(null, DexResolverRuntime.currentOrNull())
 
     private var declaredClass: Class<*>? = null
     private val parameters = mutableListOf<Class<*>>()
-    private var methodName: String? = null
-    private var returnType: Class<*>? = null
     private val usedString = mutableListOf<String>()
     private val invokeMethods = mutableListOf<Method>()
     private val callMethods = mutableListOf<Method>()
@@ -64,10 +63,6 @@ class MethodFinder private constructor(
     fun declaredClass(declaredClass: Class<*>?) = apply { this.declaredClass = declaredClass }
 
     fun parameters(vararg parameters: Class<*>) = apply { this.parameters += parameters }
-
-    fun methodName(name: String?) = apply { methodName = name }
-
-    fun returnType(returnTypeClass: Class<*>?) = apply { returnType = returnTypeClass }
 
     fun invokeMethods(vararg methods: Method) = apply { invokeMethods += methods }
 
@@ -91,76 +86,71 @@ class MethodFinder private constructor(
     @JvmSynthetic
     internal fun searchInClass(classFinder: ClassFinder) = apply { searchClassFinder = classFinder }
 
-    /** Builds the DexKit matcher represented by this finder. */
-    fun buildMethodMatcher(): MethodMatcher = MethodMatcher.create().apply {
-        this@MethodFinder.declaredClass?.let(::declaredClass)
-        this@MethodFinder.methodName?.takeIf { it.isNotEmpty() }?.let(::name)
-        this@MethodFinder.returnType?.let(::returnType)
-        if (this@MethodFinder.usedString.isNotEmpty()) usingStrings(*this@MethodFinder.usedString.toTypedArray())
-        this@MethodFinder.parameters.forEach(::addParamType)
-        this@MethodFinder.usedFields.forEach { addUsingField(it.buildFieldMatcher()) }
-        this@MethodFinder.invokeMethods.forEach { addInvoke(MethodMatcher.create(it)) }
-        this@MethodFinder.callMethods.forEach { addCaller(MethodMatcher.create(it)) }
-        this@MethodFinder.usingNumbers.forEach(::addUsingNumber)
-        if (this@MethodFinder.paramCount != -1) paramCount(this@MethodFinder.paramCount)
-        if (this@MethodFinder.modifiers != -1) modifiers(this@MethodFinder.modifiers, this@MethodFinder.matchType)
-    }
-
-    /** Finds all matching normal methods. */
-    fun find(): List<Method> {
+    /** Finds all matching constructors. */
+    fun find(): List<Constructor<*>> {
         val runtime = requireRuntime()
         val query = buildFindMethod()
         val key = queryHashKey(query)
-        runtime.cache.getMethodList(key)?.let { return it }
+        runtime.cache.getConstructorList(key)?.let { return it }
         return try {
             runtime.withBridge { bridge ->
                 val result = searchClassFinder?.findData(bridge)?.findMethod(query) ?: bridge.findMethod(query)
-                result.filter { it.isMethod }.map {
-                    it.getMethodInstance(runtime.classLoader).apply { isAccessible = true }
+                result.map {
+                    it.getConstructorInstance(runtime.classLoader).apply { isAccessible = true }
                 }
-            }.also { runtime.cache.putMethodList(key, it) }
+            }.also { runtime.cache.putConstructorList(key, it) }
         } catch (_: NoSuchMethodException) {
             emptyList()
         }
     }
 
-    /** Returns the first matching method, or null when no method matches. */
-    fun firstOrNull(): Method? = find().firstOrNull()
+    /** Returns the first matching constructor, or null when no constructor matches. */
+    fun firstOrNull(): Constructor<*>? = find().firstOrNull()
 
-    /** Returns the first matching method. */
-    @Throws(Exception::class)
-    fun first(): Method = firstOrNull() ?: throw NoSuchMethodException("No method found: $this")
+    /** Returns the first matching constructor. */
+    @Throws(NoSuchMethodException::class)
+    fun first(): Constructor<*> = firstOrNull() ?: throw NoSuchMethodException("No constructor found: $this")
 
     /** Returns whether this finder has a cached result. */
     fun existCache(): Boolean {
         val runtime = requireRuntime()
-        val key = queryHashKey(buildFindMethod())
-        return runtime.cache.containsMethodList(key)
+        return runtime.cache.containsConstructorList(queryHashKey(buildFindMethod()))
     }
 
-    /** Hooks the first matching method with the current [PackageParam]. */
+    /** Hooks the first matching constructor with the current [PackageParam]. */
     fun hook(priority: YukiHookPriority = YukiHookPriority.DEFAULT): YukiMemberHookCreator.MemberHookCreator {
         val packageParam = requirePackageParam()
-        return with(packageParam) { this@MethodFinder.first().hook(priority) }
+        return with(packageParam) { this@ConstructorFinder.first().hook(priority) }
     }
 
-    /** Hooks the first matching method without requiring an intermediate [first] call. */
+    /** Hooks the first matching constructor without requiring an intermediate [first] call. */
     fun hook(
         priority: YukiHookPriority = YukiHookPriority.DEFAULT,
         initiate: YukiMemberHookCreator.MemberHookCreator.() -> Unit
     ): YukiMemberHookCreator.MemberHookCreator.Result {
         val packageParam = requirePackageParam()
-        return with(packageParam) { this@MethodFinder.first().hook(priority, initiate) }
+        return with(packageParam) { this@ConstructorFinder.first().hook(priority, initiate) }
     }
 
     private fun buildFindMethod() = FindMethod.create().apply {
-        if (this@MethodFinder.searchPackages.isNotEmpty()) searchPackages(this@MethodFinder.searchPackages)
-        if (this@MethodFinder.excludePackages.isNotEmpty()) excludePackages(this@MethodFinder.excludePackages)
-        matcher(buildMethodMatcher())
+        if (this@ConstructorFinder.searchPackages.isNotEmpty()) searchPackages(this@ConstructorFinder.searchPackages)
+        if (this@ConstructorFinder.excludePackages.isNotEmpty()) excludePackages(this@ConstructorFinder.excludePackages)
+        matcher(MethodMatcher.create().apply {
+            name(CONSTRUCTOR_NAME)
+            this@ConstructorFinder.declaredClass?.let(::declaredClass)
+            this@ConstructorFinder.parameters.forEach(::addParamType)
+            if (this@ConstructorFinder.usedString.isNotEmpty()) usingStrings(*this@ConstructorFinder.usedString.toTypedArray())
+            this@ConstructorFinder.usedFields.forEach { addUsingField(it.buildFieldMatcher()) }
+            this@ConstructorFinder.invokeMethods.forEach { addInvoke(MethodMatcher.create(it)) }
+            this@ConstructorFinder.callMethods.forEach { addCaller(MethodMatcher.create(it)) }
+            this@ConstructorFinder.usingNumbers.forEach(::addUsingNumber)
+            if (this@ConstructorFinder.paramCount != -1) paramCount(this@ConstructorFinder.paramCount)
+            if (this@ConstructorFinder.modifiers != -1) modifiers(this@ConstructorFinder.modifiers, this@ConstructorFinder.matchType)
+        })
     }
 
     private fun queryHashKey(query: FindMethod) = searchClassFinder?.let {
-        "class:${it.queryHashKey()}:method:${query.hashKey()}"
+        "class:${it.queryHashKey()}:constructor:${query.hashKey()}"
     } ?: query.hashKey()
 
     private fun requireRuntime() = runtime ?: synchronized(this) {
@@ -170,10 +160,8 @@ class MethodFinder private constructor(
     private fun requirePackageParam() = packageParam ?: requireRuntime().packageParam
 
     override fun toString() = buildString {
-        append("mf")
+        append("ctor")
         declaredClass?.name?.let(::append)
-        methodName?.takeIf { it.isNotEmpty() }?.let(::append)
-        returnType?.name?.let(::append)
         if (parameters.isNotEmpty()) append(parameters)
         if (invokeMethods.isNotEmpty()) append(invokeMethods)
         if (callMethods.isNotEmpty()) append(callMethods)
@@ -188,26 +176,9 @@ class MethodFinder private constructor(
 
     companion object {
 
+        private const val CONSTRUCTOR_NAME = "<init>"
+
         @JvmSynthetic
-        internal fun create(packageParam: PackageParam, runtime: DexResolverRuntime) = MethodFinder(packageParam, runtime)
-
-        /** Creates a finder that can be used as a nested matcher. */
-        @JvmStatic
-        fun build() = MethodFinder()
-
-        /** Converts a reflected method to a DexKit matcher. */
-        @JvmStatic
-        fun toMethodMatcher(method: Method) = MethodMatcher.create(method)
-
-        /** Creates a finder matching the reflected method exactly. */
-        @JvmStatic
-        fun from(method: Method) = MethodFinder().apply {
-            declaredClass = method.declaringClass
-            parameters += method.parameterTypes
-            methodName = method.name
-            returnType = method.returnType
-            modifiers = method.modifiers
-            matchType = MatchType.Equals
-        }
+        internal fun create(packageParam: PackageParam, runtime: DexResolverRuntime) = ConstructorFinder(packageParam, runtime)
     }
 }
