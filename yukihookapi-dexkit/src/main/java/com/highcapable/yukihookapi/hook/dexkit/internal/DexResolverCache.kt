@@ -81,7 +81,7 @@ internal class DexResolverCache(
 
     fun clear() {
         memory.clear()
-        preferences()?.edit()?.clear()?.putString(FINGERPRINT_KEY, fingerprint)?.apply()
+        preferences()?.edit()?.clear()?.putString(FINGERPRINT_KEY, fingerprint)?.commit()
     }
 
     private inline fun <T> resolve(key: String, transform: (String) -> T): List<T>? {
@@ -108,12 +108,12 @@ internal class DexResolverCache(
     private fun put(key: String, descriptors: List<String>) {
         val snapshot = descriptors.toList()
         memory[key] = snapshot
-        preferences()?.edit()?.putString(key, JSONArray(snapshot).toString())?.apply()
+        preferences()?.edit()?.putString(key, JSONArray(snapshot).toString())?.commit()
     }
 
     private fun remove(key: String) {
         memory.remove(key)
-        preferences()?.edit()?.remove(key)?.apply()
+        preferences()?.edit()?.remove(key)?.commit()
     }
 
     private fun preferences(): SharedPreferences? {
@@ -129,7 +129,7 @@ internal class DexResolverCache(
             if (checkedPreferences !== preferences) {
                 if (preferences.getString(FINGERPRINT_KEY, null) != fingerprint) {
                     memory.clear()
-                    preferences.edit().clear().putString(FINGERPRINT_KEY, fingerprint).apply()
+                    preferences.edit().clear().putString(FINGERPRINT_KEY, fingerprint).commit()
                 }
                 checkedPreferences = preferences
             }
