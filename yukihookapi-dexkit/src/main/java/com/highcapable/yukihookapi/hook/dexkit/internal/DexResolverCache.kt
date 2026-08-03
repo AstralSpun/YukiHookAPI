@@ -166,6 +166,11 @@ internal class DexResolverCache(
                 append('|').append(path).append(':').append(it.length()).append(':').append(it.lastModified())
             }
         }
+        packageParam.moduleAppFilePath.takeIf { it.isNotBlank() }?.let { path ->
+            File(path).also {
+                append("|module:").append(path).append(':').append(it.length()).append(':').append(it.lastModified())
+            }
+        }
     }
 
     private fun decode(value: String) = JSONArray(decodeText(value)).let { array ->
