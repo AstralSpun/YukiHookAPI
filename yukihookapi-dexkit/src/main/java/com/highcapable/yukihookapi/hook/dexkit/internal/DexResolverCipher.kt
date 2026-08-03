@@ -19,7 +19,7 @@
  */
 package com.highcapable.yukihookapi.hook.dexkit.internal
 
-import android.util.Base64
+import io.fastkv.interfaces.FastCipher
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -27,7 +27,7 @@ import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-internal class DexResolverCipher(password: String) {
+internal class DexResolverCipher(password: String) : FastCipher {
 
     private val key = SecretKeySpec(
         MessageDigest.getInstance("SHA-256").digest(password.toByteArray(StandardCharsets.UTF_8)),
@@ -35,30 +35,34 @@ internal class DexResolverCipher(password: String) {
     )
     private val random = SecureRandom()
 
-    fun encrypt(value: String): String {
+    override fun encrypt(src: ByteArray): ByteArray {
         val iv = ByteArray(IV_SIZE).also(random::nextBytes)
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
             init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_LENGTH, iv))
         }
-        val encrypted = cipher.doFinal(value.toByteArray(StandardCharsets.UTF_8))
-        return PREFIX + Base64.encodeToString(iv + encrypted, Base64.NO_WRAP)
+        return iv + cipher.doFinal(src)
     }
 
-    fun decrypt(value: String): String {
-        require(value.startsWith(PREFIX))
-        val payload = Base64.decode(value.removePrefix(PREFIX), Base64.NO_WRAP)
-        require(payload.size > IV_SIZE)
-        val iv = payload.copyOf(IV_SIZE)
+    override fun decrypt(dst: ByteArray): ByteArray {
+        require(dst.size > IV_SIZE)
+        val iv = dst.copyOf(IV_SIZE)
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
             init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_LENGTH, iv))
         }
-        return String(cipher.doFinal(payload, IV_SIZE, payload.size - IV_SIZE), StandardCharsets.UTF_8)
+        return cipher.doFinal(dst, IV_SIZE, dst.size - IV_SIZE)
     }
+
+    override fun encrypt(src: Int) = src
+
+    override fun decrypt(dst: Int) = dst
+
+    override fun encrypt(src: Long) = src
+
+    override fun decrypt(dst: Long) = dst
 
     companion object {
 
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
-        private const val PREFIX = "v1:"
         private const val IV_SIZE = 12
         private const val TAG_LENGTH = 128
     }

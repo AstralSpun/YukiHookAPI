@@ -39,8 +39,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Suppress("PropertyName")
 val PackageParam.DexResolver get() = DexResolverScope(this)
 
-/** Name of the SharedPreferences file used by the DexKit cache. */
-var cacheName = "YukiHookAPI_DexResolver"
+/** Name of the directory under the hooked application's files directory used by the DexKit cache. */
+var folderName = "DexResolver"
+
+/** Base name of the FastKV files used by the DexKit cache. */
+var cacheName = "DexSearchCache"
 
 /** Password used to encrypt the DexKit cache. An empty password keeps the cache unencrypted. */
 var cachePassword = ""

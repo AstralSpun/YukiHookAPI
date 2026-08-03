@@ -20,11 +20,11 @@
 package com.highcapable.yukihookapi.hook.dexkit.internal
 
 import android.content.Context
-import android.content.SharedPreferences
-import androidx.core.content.edit
 import com.highcapable.yukihookapi.hook.dexkit.cacheName
 import com.highcapable.yukihookapi.hook.dexkit.cachePassword
+import com.highcapable.yukihookapi.hook.dexkit.folderName
 import com.highcapable.yukihookapi.hook.param.PackageParam
+import io.fastkv.FastKV
 import org.json.JSONArray
 import org.luckypray.dexkit.wrap.DexClass
 import org.luckypray.dexkit.wrap.DexField
@@ -42,13 +42,14 @@ internal class DexResolverCache(
 ) {
 
     private val memory = ConcurrentHashMap<String, List<String>>()
-    private val preferencesLock = Any()
+    private val storeLock = Any()
     private val fingerprint by lazy { createFingerprint() }
-    private val preferencesName = cacheName
+    private val directoryName = folderName
+    private val storeName = cacheName
     private val cipher = cachePassword.takeIf(String::isNotEmpty)?.let(::DexResolverCipher)
 
     @Volatile
-    private var checkedPreferences: SharedPreferences? = null
+    private var checkedStore: FastKV? = null
 
     fun getMethodList(key: String) = resolve(methodKey(key)) {
         DexMethod(it).getMethodInstance(classLoader).apply { isAccessible = true }
@@ -86,9 +87,9 @@ internal class DexResolverCache(
 
     fun clear() {
         memory.clear()
-        preferences()?.edit {
+        store()?.apply {
             clear()
-            putString(FINGERPRINT_KEY, encode(fingerprint))
+            putString(FINGERPRINT_KEY, fingerprint)
         }
     }
 
@@ -102,58 +103,58 @@ internal class DexResolverCache(
 
     private fun get(key: String): List<String>? {
         memory[key]?.let { return it }
-        val preferences = preferences() ?: return null
-        if (!preferences.contains(key)) return null
-        val decoded = runCatching { decode(preferences.getString(key, null).orEmpty()) }.getOrElse {
+        val store = store() ?: return null
+        if (!store.contains(key)) return null
+        val decoded = runCatching { decode(store.getString(key, null).orEmpty()) }.getOrElse {
             remove(key)
             return null
         }
         return decoded.also { memory[key] = it }
     }
 
-    private fun contains(key: String) = memory.containsKey(key) || preferences()?.contains(key) == true
+    private fun contains(key: String) = memory.containsKey(key) || store()?.contains(key) == true
 
     private fun put(key: String, descriptors: List<String>) {
         val snapshot = descriptors.toList()
         memory[key] = snapshot
-        preferences()?.edit {
-            putString(key, encode(JSONArray(snapshot).toString()))
+        store()?.apply {
+            putString(key, JSONArray(snapshot).toString())
         }
     }
 
     private fun remove(key: String) {
         memory.remove(key)
-        preferences()?.edit {
+        store()?.apply {
             remove(key)
         }
     }
 
-    private fun preferences(): SharedPreferences? {
-        val preferences = runCatching {
-            val context = packageParam.appContext ?: packageParam.systemContext.let {
-                if (packageParam.packageName == "android") it
-                else it.createPackageContext(packageParam.packageName, Context.CONTEXT_IGNORE_SECURITY)
+    private fun store(): FastKV? {
+        checkedStore?.let { return it }
+        synchronized(storeLock) {
+            checkedStore?.let { return it }
+            val context = context() ?: return null
+            val store = runCatching {
+                val builder = FastKV.Builder(File(context.filesDir, directoryName).absolutePath, storeName)
+                cipher?.let(builder::cipher)
+                builder.build()
+            }.getOrNull() ?: return null
+            if (runCatching { store.getString(FINGERPRINT_KEY, null) }.getOrNull() != fingerprint) {
+                memory.clear()
+                store.clear()
+                store.putString(FINGERPRINT_KEY, fingerprint)
             }
-            context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-        }.getOrNull() ?: return null
-        if (checkedPreferences === preferences) return preferences
-        synchronized(preferencesLock) {
-            if (checkedPreferences !== preferences) {
-                val storedFingerprint = runCatching {
-                    preferences.getString(FINGERPRINT_KEY, null)?.let(::decodeText)
-                }.getOrNull()
-                if (storedFingerprint != fingerprint) {
-                    memory.clear()
-                    preferences.edit {
-                        clear()
-                        putString(FINGERPRINT_KEY, encode(fingerprint))
-                    }
-                }
-                checkedPreferences = preferences
-            }
+            checkedStore = store
+            return store
         }
-        return preferences
     }
+
+    private fun context() = runCatching {
+        packageParam.appContext ?: packageParam.systemContext.let {
+            if (packageParam.packageName == "android") it
+            else it.createPackageContext(packageParam.packageName, Context.CONTEXT_IGNORE_SECURITY)
+        }
+    }.getOrNull()
 
     private fun createFingerprint() = buildString {
         append(packageParam.packageName)
@@ -173,13 +174,9 @@ internal class DexResolverCache(
         }
     }
 
-    private fun decode(value: String) = JSONArray(decodeText(value)).let { array ->
+    private fun decode(value: String) = JSONArray(value).let { array ->
         List(array.length()) { index -> array.getString(index) }
     }
-
-    private fun decodeText(value: String) = cipher?.decrypt(value) ?: value
-
-    private fun encode(value: String) = cipher?.encrypt(value) ?: value
 
     private fun methodKey(key: String) = "method:$key"
 
