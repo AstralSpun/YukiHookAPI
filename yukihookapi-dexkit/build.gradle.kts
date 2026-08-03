@@ -30,6 +30,7 @@ android {
 dependencies {
     api(projects.yukihookapiCore)
     api(libs.dexkit)
+    implementation(libs.androidx.core.ktx)
 }
 
 mavenPublishing {

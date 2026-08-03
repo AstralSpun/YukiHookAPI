@@ -21,7 +21,9 @@ package com.highcapable.yukihookapi.hook.dexkit.internal
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import com.highcapable.yukihookapi.hook.dexkit.cacheName
+import com.highcapable.yukihookapi.hook.dexkit.cachePassword
 import com.highcapable.yukihookapi.hook.param.PackageParam
 import org.json.JSONArray
 import org.luckypray.dexkit.wrap.DexClass
@@ -43,6 +45,7 @@ internal class DexResolverCache(
     private val preferencesLock = Any()
     private val fingerprint by lazy { createFingerprint() }
     private val preferencesName = cacheName
+    private val cipher = cachePassword.takeIf(String::isNotEmpty)?.let(::DexResolverCipher)
 
     @Volatile
     private var checkedPreferences: SharedPreferences? = null
@@ -83,7 +86,10 @@ internal class DexResolverCache(
 
     fun clear() {
         memory.clear()
-        preferences()?.edit()?.clear()?.putString(FINGERPRINT_KEY, fingerprint)?.commit()
+        preferences()?.edit {
+            clear()
+            putString(FINGERPRINT_KEY, encode(fingerprint))
+        }
     }
 
     private inline fun <T> resolve(key: String, transform: (String) -> T): List<T>? {
@@ -110,12 +116,16 @@ internal class DexResolverCache(
     private fun put(key: String, descriptors: List<String>) {
         val snapshot = descriptors.toList()
         memory[key] = snapshot
-        preferences()?.edit()?.putString(key, JSONArray(snapshot).toString())?.commit()
+        preferences()?.edit {
+            putString(key, encode(JSONArray(snapshot).toString()))
+        }
     }
 
     private fun remove(key: String) {
         memory.remove(key)
-        preferences()?.edit()?.remove(key)?.commit()
+        preferences()?.edit {
+            remove(key)
+        }
     }
 
     private fun preferences(): SharedPreferences? {
@@ -129,9 +139,15 @@ internal class DexResolverCache(
         if (checkedPreferences === preferences) return preferences
         synchronized(preferencesLock) {
             if (checkedPreferences !== preferences) {
-                if (preferences.getString(FINGERPRINT_KEY, null) != fingerprint) {
+                val storedFingerprint = runCatching {
+                    preferences.getString(FINGERPRINT_KEY, null)?.let(::decodeText)
+                }.getOrNull()
+                if (storedFingerprint != fingerprint) {
                     memory.clear()
-                    preferences.edit().clear().putString(FINGERPRINT_KEY, fingerprint).commit()
+                    preferences.edit {
+                        clear()
+                        putString(FINGERPRINT_KEY, encode(fingerprint))
+                    }
                 }
                 checkedPreferences = preferences
             }
@@ -152,9 +168,13 @@ internal class DexResolverCache(
         }
     }
 
-    private fun decode(value: String) = JSONArray(value).let { array ->
+    private fun decode(value: String) = JSONArray(decodeText(value)).let { array ->
         List(array.length()) { index -> array.getString(index) }
     }
+
+    private fun decodeText(value: String) = cipher?.decrypt(value) ?: value
+
+    private fun encode(value: String) = cipher?.encrypt(value) ?: value
 
     private fun methodKey(key: String) = "method:$key"
 

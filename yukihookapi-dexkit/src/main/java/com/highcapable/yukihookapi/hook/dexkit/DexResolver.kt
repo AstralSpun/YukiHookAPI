@@ -42,6 +42,9 @@ val PackageParam.DexResolver get() = DexResolverScope(this)
 /** Name of the SharedPreferences file used by the DexKit cache. */
 var cacheName = "YukiHookAPI_DexResolver"
 
+/** Password used to encrypt the DexKit cache. An empty password keeps the cache unencrypted. */
+var cachePassword = ""
+
 /** DexKit query entry point bound to a [PackageParam]. */
 class DexResolverScope internal constructor(private val packageParam: PackageParam) {
 
