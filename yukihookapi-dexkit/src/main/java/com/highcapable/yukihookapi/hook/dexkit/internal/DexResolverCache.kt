@@ -21,6 +21,7 @@ package com.highcapable.yukihookapi.hook.dexkit.internal
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.highcapable.yukihookapi.hook.dexkit.cacheName
 import com.highcapable.yukihookapi.hook.param.PackageParam
 import org.json.JSONArray
 import org.luckypray.dexkit.wrap.DexClass
@@ -41,6 +42,7 @@ internal class DexResolverCache(
     private val memory = ConcurrentHashMap<String, List<String>>()
     private val preferencesLock = Any()
     private val fingerprint by lazy { createFingerprint() }
+    private val preferencesName = cacheName
 
     @Volatile
     private var checkedPreferences: SharedPreferences? = null
@@ -122,7 +124,7 @@ internal class DexResolverCache(
                 if (packageParam.packageName == "android") it
                 else it.createPackageContext(packageParam.packageName, Context.CONTEXT_IGNORE_SECURITY)
             }
-            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
         }.getOrNull() ?: return null
         if (checkedPreferences === preferences) return preferences
         synchronized(preferencesLock) {
@@ -164,7 +166,6 @@ internal class DexResolverCache(
 
     companion object {
 
-        private const val PREFERENCES_NAME = "YukiHookAPI_DexResolver"
         private const val FINGERPRINT_KEY = "@fingerprint"
     }
 }

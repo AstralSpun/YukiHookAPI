@@ -39,6 +39,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Suppress("PropertyName")
 val PackageParam.DexResolver get() = DexResolverScope(this)
 
+/** Name of the SharedPreferences file used by the DexKit cache. */
+var cacheName = "YukiHookAPI_DexResolver"
+
 /** DexKit query entry point bound to a [PackageParam]. */
 class DexResolverScope internal constructor(private val packageParam: PackageParam) {
 
