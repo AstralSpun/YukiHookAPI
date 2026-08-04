@@ -298,7 +298,6 @@ fun GenerateData.sources() = mapOf(
       
       package ${SymbolConverterTool.process(entryPackageName)}
       
-      import androidx.annotation.Keep
       import ${ExternalCallerName.YukiXposedEventCaller.first}
       import io.github.libxposed.api.XposedModule
       import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
@@ -308,7 +307,7 @@ fun GenerateData.sources() = mapOf(
       import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
       import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
     """.trimIndent() + "\n\n" + createCommentContent("Xposed Init") + "\n" + """
-      @Keep
+      
       class $xInitClassName : XposedModule() {
       
           override fun onModuleLoaded(param: ModuleLoadedParam) {
