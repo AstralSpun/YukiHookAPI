@@ -353,6 +353,7 @@ fun GenerateData.sources() = mapOf(
       object ${entryClassName}_Impl {
       
           private const val MODULE_PACKAGE_NAME = "${customMPackageName.ifBlank { modulePackageName }}"
+          private const val SYSTEM_FRAMEWORK_NAME = "android"
           private var isModuleLoaded = false
           private var isHotReloadEntryAttached = false
           private var hotReloadState: Any? = null
@@ -404,8 +405,8 @@ fun GenerateData.sources() = mapOf(
               if (isModuleLoaded.not()) return
               ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnPackageLoaded(
                   type = HookEntryType.PACKAGE,
-                  packageName = "android",
-                  processName = processName,
+                  packageName = SYSTEM_FRAMEWORK_NAME,
+                  processName = SYSTEM_FRAMEWORK_NAME,
                   appClassLoader = param.classLoader
               )
           }
