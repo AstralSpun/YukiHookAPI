@@ -70,6 +70,12 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
 
         /** Java source file extension. */
         private const val JAVA_FILE_EXT_NAME = "java"
+
+        /** Direct Kotlin assignment for the auto hot reload option. */
+        private val AUTO_HOT_RELOAD_ASSIGNMENT_REGEX = """\bisEnableAutoHotReload\s*=\s*(true|false)\b""".toRegex()
+
+        /** Java setter form for the auto hot reload option. */
+        private val AUTO_HOT_RELOAD_SETTER_REGEX = """\bsetEnableAutoHotReload\s*\(\s*(true|false)\s*\)""".toRegex()
     }
 
     override fun create(environment: SymbolProcessorEnvironment) = object : SymbolProcessor {
@@ -148,6 +154,7 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
                                 val xInitPatchName = data.xInitClassName.ifBlank { "${it.simpleName.asString()}$XPOSED_CLASS_SHORT_NAME" }
                                 if (data.xInitClassName == it.simpleName.asString())
                                     problem(msg = "Duplicate entryClassName \"${data.xInitClassName}\"")
+                                val sourceFilePath = (it.location as? FileLocation?)?.filePath?.parseFileSeparator() ?: ""
                                 data.entryPackageName = it.packageName.asString()
                                 data.entryClassName = it.simpleName.asString()
                                 data.xInitClassName = xInitPatchName
@@ -155,8 +162,10 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
                                     ClassKind.CLASS -> false
                                     ClassKind.OBJECT -> true
                                     else -> problem(msg = "Invalid hook entry class \"${it.simpleName.asString()}\" kind \"${it.classKind}\"")
-                                }; generateAssetsFile(
-                                    codePath = (it.location as? FileLocation?)?.filePath?.parseFileSeparator() ?: "",
+                                }
+                                data.isEnableAutoHotReload = parseAutoHotReloadConfig(sourceFilePath)
+                                generateAssetsFile(
+                                    codePath = sourceFilePath,
                                     sourcePath = sourcePath.parseFileSeparator(),
                                     data = data
                                 )
@@ -219,7 +228,7 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
                 if (data.modulePackageName.isBlank() && data.customMPackageName.isBlank())
                     problem(msg = "Cannot identify your Module App's package name, please make sure \"BuildConfig.java\" is generated correctly")
                 xposedMetaInfDir.resolve("java_init.list").writeText(text = "${data.entryPackageName}.${data.xInitClassName}\n")
-                updateModuleProperties(xposedMetaInfDir.resolve("module.prop"))
+                updateModuleProperties(xposedMetaInfDir.resolve("module.prop"), data.isEnableAutoHotReload)
                 metaInfDir.resolve("yukihookapi_init").writeText(text = "${data.entryPackageName}.${data.entryClassName}")
                 // Removes entry files created by older YukiHookAPI versions.
                 assetsDir.resolve("xposed_init").apply { if (exists()) delete() }
@@ -229,12 +238,12 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
         }
 
         /** Updates the required libxposed properties while retaining framework-specific options. */
-        private fun updateModuleProperties(modulePropertiesFile: File) {
+        private fun updateModuleProperties(modulePropertiesFile: File, isEnableAutoHotReload: Boolean) {
             val properties = Properties().apply {
                 if (modulePropertiesFile.isFile) modulePropertiesFile.inputStream().use { load(it) }
                 setProperty("minApiVersion", "102")
                 setProperty("targetApiVersion", "102")
-                setProperty("autoHotReload", "true")
+                setProperty("autoHotReload", isEnableAutoHotReload.toString())
             }
             val writer = StringWriter()
             properties.store(writer, null)
@@ -338,6 +347,33 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
             val matcher = "APPLICATION_ID\\s*=\\s*\"([^\"]+)\"".toRegex()
             return runCatching { matcher.find(buildConfigFile.readText())?.groups?.get(1)?.value }.getOrNull() ?: ""
         }
+
+        /**
+         * Parses a directly configured auto hot reload value from the Hook entry source.
+         * @param sourceFilePath the Hook entry source file path.
+         * @return [Boolean] the configured value, defaults to false when not statically declared.
+         */
+        private fun parseAutoHotReloadConfig(sourceFilePath: String): Boolean {
+            if (sourceFilePath.isBlank()) return false
+            val source = runCatching { sourceFilePath.toFile().readText() }.getOrNull() ?: return false
+            val cleanSource = source.removeSourceComments()
+            return (AUTO_HOT_RELOAD_ASSIGNMENT_REGEX.findAll(cleanSource) + AUTO_HOT_RELOAD_SETTER_REGEX.findAll(cleanSource))
+                .sortedBy { it.range.first }
+                .lastOrNull()
+                ?.groups
+                ?.get(1)
+                ?.value
+                ?.toBooleanStrictOrNull() ?: false
+        }
+
+        /**
+         * Removes comments before scanning source text.
+         * @return [String]
+         */
+        private fun String.removeSourceComments() =
+            replace("/\\*.*?\\*/".toRegex(RegexOption.DOT_MATCHES_ALL), "")
+                .lineSequence()
+                .joinToString(separator = "\n") { it.substringBefore("//") }
 
         /**
          * Normalizes file separators.

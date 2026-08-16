@@ -30,8 +30,9 @@ import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
  * - The project source directory defaults to `src/main` and can be customized through [sourcePath].
  *
  * - The processor creates `java_init.list` and `module.prop` under `[sourcePath]/resources/META-INF/xposed`.
- * The generated `module.prop` enables framework hot reload dispatch; update-triggered requests are accepted only when
- * [YukiHookAPI.Configs.isEnableAutoHotReload] is enabled by the Hook entry.
+ * The generated `module.prop` writes `autoHotReload` from a directly declared boolean assignment in the Hook entry
+ * source when one is present; otherwise it remains disabled. Update-triggered requests are still accepted only when
+ * [YukiHookAPI.Configs.isEnableAutoHotReload] is enabled at runtime by the Hook entry.
  *
  * The generated libxposed entry uses the fully qualified annotated class name plus `_YukiHookXposedInit`, or [entryClassName].
  *
