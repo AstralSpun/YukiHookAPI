@@ -316,6 +316,7 @@ fun GenerateData.sources() = mapOf(
           }
       
           override fun onPackageLoaded(param: PackageLoadedParam) {
+              ${entryClassName}_Impl.callOnPackageLoaded(param)
               ${ExternalCallerName.YukiXposedEventCaller.second}.callOnPackageLoaded(param)
           }
 
@@ -341,12 +342,14 @@ fun GenerateData.sources() = mapOf(
       
       package ${SymbolConverterTool.process(entryPackageName)}
       
+      import android.content.pm.ApplicationInfo
       import ${ExternalCallerName.YukiXposedModuleCaller.first}
       import com.highcapable.yukihookapi.hook.xposed.bridge.type.HookEntryType
       import io.github.libxposed.api.XposedInterface
       import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
       import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
       import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
+      import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
       import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam
       import io.github.libxposed.api.XposedModuleInterface.SystemServerStartingParam
     """.trimIndent() + "\n\n" + createCommentContent("Xposed Init Impl") + "\n" + """
@@ -390,15 +393,56 @@ fun GenerateData.sources() = mapOf(
               )
           }
       
+          fun callOnPackageLoaded(param: PackageLoadedParam) {
+              if (isModuleLoaded.not()) return
+              val finalClassLoader = resolveFinalClassLoader(param) ?: return
+              dispatchPackage(
+                  packageName = param.packageName,
+                  appClassLoader = finalClassLoader,
+                  appInfo = param.applicationInfo
+              )
+          }
+
           fun callOnPackageReady(param: PackageReadyParam) {
               if (isModuleLoaded.not()) return
-              ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnPackageLoaded(
-                  type = HookEntryType.PACKAGE,
+              dispatchPackage(
                   packageName = param.packageName,
-                  processName = processName,
                   appClassLoader = param.classLoader,
                   appInfo = param.applicationInfo
               )
+          }
+
+          private fun dispatchPackage(
+              packageName: String,
+              appClassLoader: ClassLoader,
+              appInfo: ApplicationInfo
+          ) {
+              ${ExternalCallerName.YukiXposedModuleCaller.second}.callOnPackageLoaded(
+                  type = HookEntryType.PACKAGE,
+                  packageName = packageName,
+                  processName = processName,
+                  appClassLoader = appClassLoader,
+                  appInfo = appInfo
+              )
+          }
+
+          private fun resolveFinalClassLoader(param: PackageLoadedParam): ClassLoader? {
+              if (param is PackageReadyParam) {
+                  runCatching { param.classLoader }
+                      .getOrNull()
+                      ?.let { return it }
+              }
+
+              return runCatching {
+                  param.javaClass.methods
+                      .firstOrNull {
+                          it.name == "getClassLoader" &&
+                              it.parameterCount == 0 &&
+                              ClassLoader::class.java.isAssignableFrom(it.returnType)
+                      }
+                      ?.apply { isAccessible = true }
+                      ?.invoke(param) as? ClassLoader
+              }.getOrNull()
           }
       
           fun callOnSystemServerStarting(param: SystemServerStartingParam) {
