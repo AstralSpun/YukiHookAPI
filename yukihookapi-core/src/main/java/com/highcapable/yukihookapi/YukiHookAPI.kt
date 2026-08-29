@@ -561,6 +561,15 @@ object YukiHookAPI {
         var isEnableAutoHotReload = false
 
         /**
+         * Whether the libxposed module scope is fixed and cannot be changed dynamically by users.
+         *
+         * When this value is directly assigned in the annotated Hook entry source, the Xposed processor writes the
+         * corresponding `staticScope` value to `module.prop`. It defaults to false; changing it at runtime cannot
+         * modify an already generated module metadata file.
+         */
+        var isStaticScope = false
+
+        /**
          * Whether [Member] caching is enabled.
          *
          * - This API and feature have been removed and will be deleted in a future version.

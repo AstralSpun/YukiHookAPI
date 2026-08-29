@@ -33,6 +33,8 @@ import com.highcapable.yukihookapi.hook.xposed.proxy.IYukiHookXposedInit
  * The generated `module.prop` writes `autoHotReload` from a directly declared boolean assignment in the Hook entry
  * source when one is present; otherwise it remains disabled. Update-triggered requests are still accepted only when
  * [YukiHookAPI.Configs.isEnableAutoHotReload] is enabled at runtime by the Hook entry.
+ * The generated `module.prop` also writes `staticScope` from a directly declared `isStaticScope` assignment; it
+ * remains disabled when no assignment is present.
  *
  * The generated libxposed entry uses the fully qualified annotated class name plus `_YukiHookXposedInit`, or [entryClassName].
  *

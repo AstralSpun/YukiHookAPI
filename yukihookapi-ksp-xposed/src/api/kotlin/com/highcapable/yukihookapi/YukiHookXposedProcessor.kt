@@ -76,6 +76,12 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
 
         /** Java setter form for the auto hot reload option. */
         private val AUTO_HOT_RELOAD_SETTER_REGEX = """\bsetEnableAutoHotReload\s*\(\s*(true|false)\s*\)""".toRegex()
+
+        /** Direct Kotlin assignment for the static scope option. */
+        private val STATIC_SCOPE_ASSIGNMENT_REGEX = """\bisStaticScope\s*=\s*(true|false)\b""".toRegex()
+
+        /** Java setter form for the static scope option. */
+        private val STATIC_SCOPE_SETTER_REGEX = """\bsetStaticScope\s*\(\s*(true|false)\s*\)""".toRegex()
     }
 
     override fun create(environment: SymbolProcessorEnvironment) = object : SymbolProcessor {
@@ -164,6 +170,7 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
                                     else -> problem(msg = "Invalid hook entry class \"${it.simpleName.asString()}\" kind \"${it.classKind}\"")
                                 }
                                 data.isEnableAutoHotReload = parseAutoHotReloadConfig(sourceFilePath)
+                                data.isStaticScope = parseStaticScopeConfig(sourceFilePath)
                                 generateAssetsFile(
                                     codePath = sourceFilePath,
                                     sourcePath = sourcePath.parseFileSeparator(),
@@ -228,7 +235,11 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
                 if (data.modulePackageName.isBlank() && data.customMPackageName.isBlank())
                     problem(msg = "Cannot identify your Module App's package name, please make sure \"BuildConfig.java\" is generated correctly")
                 xposedMetaInfDir.resolve("java_init.list").writeText(text = "${data.entryPackageName}.${data.xInitClassName}\n")
-                updateModuleProperties(xposedMetaInfDir.resolve("module.prop"), data.isEnableAutoHotReload)
+                updateModuleProperties(
+                    modulePropertiesFile = xposedMetaInfDir.resolve("module.prop"),
+                    isEnableAutoHotReload = data.isEnableAutoHotReload,
+                    isStaticScope = data.isStaticScope
+                )
                 metaInfDir.resolve("yukihookapi_init").writeText(text = "${data.entryPackageName}.${data.entryClassName}")
                 // Removes entry files created by older YukiHookAPI versions.
                 assetsDir.resolve("xposed_init").apply { if (exists()) delete() }
@@ -238,12 +249,17 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
         }
 
         /** Updates the required libxposed properties while retaining framework-specific options. */
-        private fun updateModuleProperties(modulePropertiesFile: File, isEnableAutoHotReload: Boolean) {
+        private fun updateModuleProperties(
+            modulePropertiesFile: File,
+            isEnableAutoHotReload: Boolean,
+            isStaticScope: Boolean
+        ) {
             val properties = Properties().apply {
                 if (modulePropertiesFile.isFile) modulePropertiesFile.inputStream().use { load(it) }
                 setProperty("minApiVersion", "102")
                 setProperty("targetApiVersion", "102")
                 setProperty("autoHotReload", isEnableAutoHotReload.toString())
+                setProperty("staticScope", isStaticScope.toString())
             }
             val writer = StringWriter()
             properties.store(writer, null)
@@ -354,10 +370,30 @@ class YukiHookXposedProcessor : SymbolProcessorProvider {
          * @return [Boolean] the configured value, defaults to false when not statically declared.
          */
         private fun parseAutoHotReloadConfig(sourceFilePath: String): Boolean {
+            return parseBooleanConfig(sourceFilePath, AUTO_HOT_RELOAD_ASSIGNMENT_REGEX, AUTO_HOT_RELOAD_SETTER_REGEX)
+        }
+
+        /**
+         * Parses a directly configured static scope value from the Hook entry source.
+         * @param sourceFilePath the Hook entry source file path.
+         * @return [Boolean] the configured value, defaults to false when not statically declared.
+         */
+        private fun parseStaticScopeConfig(sourceFilePath: String): Boolean {
+            return parseBooleanConfig(sourceFilePath, STATIC_SCOPE_ASSIGNMENT_REGEX, STATIC_SCOPE_SETTER_REGEX)
+        }
+
+        /**
+         * Parses one boolean configuration value from the Hook entry source.
+         * @param sourceFilePath the Hook entry source file path.
+         * @param assignmentRegex the Kotlin assignment matcher.
+         * @param setterRegex the Java setter matcher.
+         * @return [Boolean] the configured value, defaults to false when not statically declared.
+         */
+        private fun parseBooleanConfig(sourceFilePath: String, assignmentRegex: Regex, setterRegex: Regex): Boolean {
             if (sourceFilePath.isBlank()) return false
             val source = runCatching { sourceFilePath.toFile().readText() }.getOrNull() ?: return false
             val cleanSource = source.removeSourceComments()
-            return (AUTO_HOT_RELOAD_ASSIGNMENT_REGEX.findAll(cleanSource) + AUTO_HOT_RELOAD_SETTER_REGEX.findAll(cleanSource))
+            return (assignmentRegex.findAll(cleanSource) + setterRegex.findAll(cleanSource))
                 .sortedBy { it.range.first }
                 .lastOrNull()
                 ?.groups

@@ -32,6 +32,7 @@ package com.highcapable.yukihookapi.entity
  * @param isUsingXposedModuleStatus whether Xposed module status detection is enabled.
  * @param isUsingResourcesHook whether the legacy Resources Hook option was requested.
  * @param isEnableAutoHotReload whether libxposed hot reload dispatch should be enabled in module.prop.
+ * @param isStaticScope whether libxposed static scope should be enabled in module.prop.
  */
 data class GenerateData(
     var entryPackageName: String = "",
@@ -42,5 +43,6 @@ data class GenerateData(
     var isEntryClassKindOfObject: Boolean = false,
     var isUsingXposedModuleStatus: Boolean = true,
     var isUsingResourcesHook: Boolean = false,
-    var isEnableAutoHotReload: Boolean = false
+    var isEnableAutoHotReload: Boolean = false,
+    var isStaticScope: Boolean = false
 )
