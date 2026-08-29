@@ -42,7 +42,7 @@ class MethodFinder private constructor(
     constructor() : this(null, DexResolverRuntime.currentOrNull())
 
     private var declaredClass: Class<*>? = null
-    private val parameters = mutableListOf<Class<*>>()
+    private val parameters = mutableListOf<Class<*>?>()
     private var methodName: String? = null
     private var returnType: Class<*>? = null
     private val usedString = mutableListOf<String>()
@@ -63,7 +63,8 @@ class MethodFinder private constructor(
 
     fun declaredClass(declaredClass: Class<*>?) = apply { this.declaredClass = declaredClass }
 
-    fun parameters(vararg parameters: Class<*>) = apply { this.parameters += parameters }
+    /** Adds parameter types. A null element matches any type at that position. */
+    fun parameters(vararg parameters: Class<*>?) = apply { this.parameters += parameters }
 
     fun methodName(name: String?) = apply { methodName = name }
 
@@ -97,7 +98,7 @@ class MethodFinder private constructor(
         this@MethodFinder.methodName?.takeIf { it.isNotEmpty() }?.let(::name)
         this@MethodFinder.returnType?.let(::returnType)
         if (this@MethodFinder.usedString.isNotEmpty()) usingStrings(*this@MethodFinder.usedString.toTypedArray())
-        this@MethodFinder.parameters.forEach(::addParamType)
+        this@MethodFinder.parameters.forEach { addParamType(it) }
         this@MethodFinder.usedFields.forEach { addUsingField(it.buildFieldMatcher()) }
         this@MethodFinder.invokeMethods.forEach { addInvoke(MethodMatcher.create(it)) }
         this@MethodFinder.callMethods.forEach { addCaller(MethodMatcher.create(it)) }

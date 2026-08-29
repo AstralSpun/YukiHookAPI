@@ -30,7 +30,9 @@ import java.lang.reflect.Method
 class MethodInfo {
 
     var declaredClass: Class<*>? = null
-    var parameters: Array<Class<*>>? = null
+
+    /** Parameter types. A null element matches any type at that position. */
+    var parameters: Array<Class<*>?>? = null
     var methodName: String? = null
     var returnType: Class<*>? = null
     var usedString: Array<String>? = null
