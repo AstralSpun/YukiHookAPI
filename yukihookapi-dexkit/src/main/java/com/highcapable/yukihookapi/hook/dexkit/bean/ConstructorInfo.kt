@@ -29,6 +29,8 @@ import java.lang.reflect.Method
 /** Constructor query properties used by `DexResolver.findConstructor`. */
 class ConstructorInfo {
 
+    private val notMatchers = mutableListOf<MethodInfo>()
+
     var declaredClass: Class<*>? = null
     var parameters: Array<Class<*>>? = null
     var usedString: Array<String>? = null
@@ -41,6 +43,12 @@ class ConstructorInfo {
     var searchPackages: Array<String>? = null
     var excludePackages: Array<String>? = null
     var usedFields: Array<FieldFinder>? = null
+
+    /** Adds a negated nested method matcher. */
+    @JvmSynthetic
+    fun not(methodInfo: MethodInfo.() -> Unit) = apply {
+        notMatchers += MethodInfo().apply(methodInfo)
+    }
 
     /** Creates a standalone finder from these properties. */
     fun generate() = configure(ConstructorFinder())
@@ -56,6 +64,7 @@ class ConstructorInfo {
         this@ConstructorInfo.invokeMethods?.let { invokeMethods(*it) }
         this@ConstructorInfo.callMethods?.let { callMethods(*it) }
         this@ConstructorInfo.usingNumbers?.let { usingNumbers(*it) }
+        this@ConstructorInfo.notMatchers.forEach { not(it.generate()) }
         if (this@ConstructorInfo.paramCount != -1) paramCount(this@ConstructorInfo.paramCount)
         if (this@ConstructorInfo.modifiers != -1) modifiers(this@ConstructorInfo.modifiers, this@ConstructorInfo.matchType)
         this@ConstructorInfo.searchPackages?.let { searchPackages(*it) }

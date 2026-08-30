@@ -48,6 +48,7 @@ class ConstructorFinder private constructor(
     private val invokeMethods = mutableListOf<Method>()
     private val callMethods = mutableListOf<Method>()
     private val usingNumbers = mutableListOf<Long>()
+    private val notMatchers = mutableListOf<MethodFinder>()
     private var paramCount = -1
     private var modifiers = -1
     private var matchType = MatchType.Contains
@@ -69,6 +70,9 @@ class ConstructorFinder private constructor(
     fun callMethods(vararg methods: Method) = apply { callMethods += methods }
 
     fun usingNumbers(vararg numbers: Long) = apply { usingNumbers += numbers.toList() }
+
+    @JvmSynthetic
+    internal fun not(matcher: MethodFinder) = apply { notMatchers += matcher }
 
     fun paramCount(count: Int) = apply { paramCount = count }
 
@@ -144,6 +148,7 @@ class ConstructorFinder private constructor(
             this@ConstructorFinder.invokeMethods.forEach { addInvoke(MethodMatcher.create(it)) }
             this@ConstructorFinder.callMethods.forEach { addCaller(MethodMatcher.create(it)) }
             this@ConstructorFinder.usingNumbers.forEach(::addUsingNumber)
+            this@ConstructorFinder.notMatchers.forEach { addNoneOf(it.buildMethodMatcher()) }
             if (this@ConstructorFinder.paramCount != -1) paramCount(this@ConstructorFinder.paramCount)
             if (this@ConstructorFinder.modifiers != -1) modifiers(this@ConstructorFinder.modifiers, this@ConstructorFinder.matchType)
         })
@@ -167,6 +172,7 @@ class ConstructorFinder private constructor(
         if (callMethods.isNotEmpty()) append(callMethods)
         if (usedFields.isNotEmpty()) append(usedFields)
         if (usingNumbers.isNotEmpty()) append(usingNumbers)
+        if (notMatchers.isNotEmpty()) append(notMatchers)
         if (paramCount != -1) append(paramCount)
         if (modifiers != -1) append(modifiers)
         if (usedString.isNotEmpty()) append(usedString)

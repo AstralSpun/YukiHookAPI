@@ -29,6 +29,8 @@ import java.lang.reflect.Method
 /** Method query properties used by `DexResolver.findMethod`. */
 class MethodInfo {
 
+    private val notMatchers = mutableListOf<MethodInfo>()
+
     var declaredClass: Class<*>? = null
 
     /** Parameter types. A null element matches any type at that position. */
@@ -46,14 +48,20 @@ class MethodInfo {
     var excludePackages: Array<String>? = null
     var usedFields: Array<FieldFinder>? = null
 
+    /** Adds a negated nested method matcher. */
+    @JvmSynthetic
+    fun not(methodInfo: MethodInfo.() -> Unit) = apply {
+        notMatchers += MethodInfo().apply(methodInfo)
+    }
+
     /** Creates a standalone finder from these properties. */
-    fun generate() = configure(MethodFinder())
+    fun generate(): MethodFinder = configure(MethodFinder())
 
     @JvmSynthetic
-    internal fun generate(packageParam: PackageParam, runtime: DexResolverRuntime) =
+    internal fun generate(packageParam: PackageParam, runtime: DexResolverRuntime): MethodFinder =
         configure(MethodFinder.create(packageParam, runtime))
 
-    private fun configure(finder: MethodFinder) = finder.apply {
+    private fun configure(finder: MethodFinder): MethodFinder = finder.apply {
         this@MethodInfo.declaredClass?.let(::declaredClass)
         this@MethodInfo.parameters?.let { parameters(*it) }
         this@MethodInfo.methodName?.let(::methodName)
@@ -62,6 +70,7 @@ class MethodInfo {
         this@MethodInfo.invokeMethods?.let { invokeMethods(*it) }
         this@MethodInfo.callMethods?.let { callMethods(*it) }
         this@MethodInfo.usingNumbers?.let { usingNumbers(*it) }
+        this@MethodInfo.notMatchers.forEach { not(it.generate()) }
         if (this@MethodInfo.paramCount != -1) paramCount(this@MethodInfo.paramCount)
         if (this@MethodInfo.modifiers != -1) modifiers(this@MethodInfo.modifiers, this@MethodInfo.matchType)
         this@MethodInfo.searchPackages?.let { searchPackages(*it) }
